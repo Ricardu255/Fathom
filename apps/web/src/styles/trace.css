@@ -1,0 +1,225 @@
+/* Trace swimlanes: 输入 / 模型 / 工具 三条等宽时间轴。 */
+
+.trace-swimlane {
+  margin: 12px 0 18px;
+  padding: 10px 12px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--paper-sheet) 55%, transparent);
+}
+
+.trace-swimlane-axis {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-left: 70px;
+  padding-bottom: 6px;
+  color: var(--muted-2);
+  font-family: var(--type);
+  font-size: 7.5px;
+  letter-spacing: 0.05em;
+}
+
+.trace-lane {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.trace-lane + .trace-lane {
+  border-top: 1px dashed var(--hairline);
+}
+
+.trace-lane-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 10px;
+}
+
+.trace-lane-label small {
+  color: var(--muted-2);
+  font-family: var(--type);
+  font-size: 7px;
+}
+
+.trace-lane-track {
+  position: relative;
+  height: 30px;
+  border-right: 1px solid var(--hairline);
+  background-image: linear-gradient(to right, var(--hairline) 1px, transparent 1px);
+  background-size: 25% 100%;
+}
+
+.trace-lane.tool-lane .trace-lane-track {
+  height: 38px;
+}
+
+.trace-lane-dot {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: 1px solid var(--ink-line);
+  border-radius: 50%;
+  background: var(--paper-sheet);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.trace-lane-dot:hover {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lotus) 35%, transparent);
+  transform: translate(-50%, -50%) scale(1.2);
+}
+
+.trace-lane-dot.input {
+  background: var(--silver);
+}
+
+.trace-lane-dot.model {
+  background: var(--text);
+}
+
+.trace-lane-bar {
+  position: absolute;
+  height: 7px;
+  min-width: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  background: var(--text);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.trace-lane-bar:hover {
+  opacity: 1;
+}
+
+.trace-lane-bar.failed {
+  background: var(--red);
+}
+
+.trace-lane-bar.running {
+  background: var(--amber);
+}
+
+.trace-lane-marker {
+  position: absolute;
+  top: 3px;
+  width: 2px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: var(--lotus);
+  cursor: pointer;
+  transform: translateX(-50%);
+}
+
+.trace-lane-marker.compaction {
+  top: 15px;
+  height: 12px;
+  background: var(--silver);
+}
+
+.trace-swimlane-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 4px 0 0 70px;
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.trace-swimlane-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ink-line);
+  border-radius: 50%;
+  background: var(--paper-sheet);
+}
+
+.legend-dot.input {
+  background: var(--silver);
+}
+
+.legend-dot.model {
+  background: var(--text);
+}
+
+.legend-bar {
+  width: 14px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--text);
+  opacity: 0.75;
+}
+
+.legend-marker {
+  width: 2px;
+  height: 12px;
+  background: var(--lotus);
+}
+
+.trace-request-summary {
+  padding: 2px 2px 12px;
+}
+
+.trace-request-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.trace-request-summary dl > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 9px;
+  border-left: 1px solid var(--hairline);
+}
+
+.trace-request-summary dt {
+  color: var(--muted-2);
+  font-family: var(--type);
+  font-size: 7.5px;
+  letter-spacing: 0.06em;
+}
+
+.trace-request-summary dd {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .trace-swimlane-axis,
+  .trace-swimlane-legend {
+    margin-left: 54px;
+  }
+
+  .trace-lane {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .trace-request-summary dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

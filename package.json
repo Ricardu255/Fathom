@@ -1,0 +1,42 @@
+{
+  "name": "agent-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @harness/daemon --filter @harness/web dev",
+    "dev:daemon": "pnpm --filter @harness/daemon dev",
+    "dev:web": "pnpm --filter @harness/web dev",
+    "build": "pnpm --filter @harness/daemon build && pnpm --filter @harness/web build",
+    "start": "pnpm --filter @harness/daemon start",
+    "desktop:dev": "pnpm build && pnpm --filter @harness/desktop build && pnpm --filter @harness/desktop assets && pnpm --filter @harness/desktop start",
+    "desktop:package": "pnpm build && pnpm --filter @harness/desktop build && pnpm --filter @harness/desktop assets && pnpm --filter @harness/desktop package",
+    "test:desktop": "pnpm build && pnpm --filter @harness/desktop build && pnpm --filter @harness/desktop assets && playwright test -c playwright.desktop.config.ts",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "node --import tsx --test \"packages/**/test/*.test.ts\" \"apps/**/test/*.test.ts\"",
+    "test:e2e": "pnpm build && playwright test",
+    "check": "biome check .",
+    "check:write": "biome check --write .",
+    "format": "biome format --write ."
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^24.0.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

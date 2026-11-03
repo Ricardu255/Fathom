@@ -1,0 +1,31 @@
+node_modules/
+dist/
+data/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/
+.e2e-data/
+.e2e-workspace/
+test-results/
+playwright-report/
+.desktop-data/
+.desktop-workspace/
+apps/desktop/resources/
+apps/desktop/release/
+test-results-desktop/
+
+# 本地运行时数据（SQLite / JSONL / pi 凭据文件），绝不入库
+.ui-preview-data/
+workspace/
+scripts/.tmp-inspect.mjs
+
+# 本机 Agent 工具链与设计参考素材，不属于产品源码
+.agents/
+.claude/
+demo/
+screenshots/

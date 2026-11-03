@@ -1,0 +1,19 @@
+{
+  "name": "@harness/sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.75"
+  }
+}

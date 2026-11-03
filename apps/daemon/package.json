@@ -1,0 +1,41 @@
+{
+  "name": "@harness/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/bootstrap.ts",
+    "start": "node --import tsx --env-file-if-exists=../../.env dist/bootstrap.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/multipart": "^10.1.6",
+    "@fastify/static": "^10.1.8",
+    "@harness/core": "workspace:*",
+    "@harness/policy": "workspace:*",
+    "@harness/providers": "workspace:*",
+    "@harness/sandbox": "workspace:*",
+    "@harness/tools": "workspace:*",
+    "cron-parser": "^5.10.3",
+    "fastify": "^5.6.0",
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "node-diff3": "^3.2.1",
+    "tsx": "^4.20.0",
+    "typebox": "^1.4.3",
+    "unpdf": "^2.1.0",
+    "xlsx": "^0.18.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

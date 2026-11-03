@@ -1,0 +1,22 @@
+{
+  "name": "@harness/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./board-task": "./src/board-task.ts",
+    "./events": "./src/events.ts",
+    "./knowledge": "./src/knowledge.ts",
+    "./literature": "./src/literature.ts",
+    "./messages": "./src/messages.ts",
+    "./sub-agent": "./src/sub-agent.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

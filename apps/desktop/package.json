@@ -1,0 +1,58 @@
+{
+  "name": "@harness/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fathom desktop client",
+  "main": "dist/main.js",
+  "scripts": {
+    "assets": "node scripts/build-assets.mjs",
+    "build": "tsc -p tsconfig.json",
+    "package": "node scripts/package.mjs",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "build": {
+    "appId": "com.fathom.harness",
+    "productName": "Fathom",
+    "icon": "build/icon.png",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/daemon.mjs",
+        "to": "daemon.mjs"
+      },
+      {
+        "from": "resources/web",
+        "to": "web"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.3.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2"
+  }
+}
