@@ -51,6 +51,7 @@ import { WorkspaceBrowser } from "../../components/WorkspaceBrowser";
 import { WorkspaceDrawer } from "../../components/WorkspaceDrawer";
 import { useChatStore } from "../../stores/chat-store";
 import { TraceView } from "../trace/TracePage";
+import { isNearBottom } from "./follow-bottom";
 import { useSessionStream } from "./use-session-stream";
 
 function messageText(message: AgentMessage): string {
@@ -98,6 +99,9 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
   const [activeTurn, setActiveTurn] = useState(0);
   const [view, setView] = useState<"chat" | "files" | "trace">("chat");
   const [visibleLimit, setVisibleLimit] = useState(80);
+  const [followingOutput, setFollowingOutput] = useState(true);
+  const [unreadTurns, setUnreadTurns] = useState(0);
+  const previousMessageCount = useRef(messages.length);
   const visibleMessages = messages.filter(
     (message) => messageText(message) !== "" || messageImages(message).length > 0,
   );
@@ -156,8 +160,17 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: 这些值变化时需要把视口滚到底部
   useEffect(() => {
+    if (!followingOutput) return;
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, streamingText, tools.length, approvals, error]);
+  }, [messages.length, streamingText, tools.length, approvals, error, followingOutput]);
+
+  // 用户往回翻的时候只累计新消息数，不抢滚动位置。
+  useEffect(() => {
+    const grew = messages.length > previousMessageCount.current;
+    previousMessageCount.current = messages.length;
+    if (!grew || followingOutput) return;
+    setUnreadTurns((count) => count + 1);
+  }, [messages.length, followingOutput]);
 
   const send = async (
     text: string,
@@ -576,6 +589,9 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
             onScroll={() => {
               const container = chatScrollRef.current;
               if (container === null) return;
+              const near = isNearBottom(container);
+              setFollowingOutput(near);
+              if (near) setUnreadTurns(0);
               const threshold = container.getBoundingClientRect().top + 96;
               let current = 0;
               turns.forEach((turn, index) => {
@@ -866,6 +882,21 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
                 <div className="retry-notice" role="status">
                   {retryNotice}
                 </div>
+              ) : null}
+
+              {!followingOutput ? (
+                <button
+                  className="chat-jump-bottom"
+                  onClick={() => {
+                    setFollowingOutput(true);
+                    setUnreadTurns(0);
+                    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+                  }}
+                  type="button"
+                >
+                  回到底部
+                  {unreadTurns > 0 ? ` · ${unreadTurns} 条新消息` : ""}
+                </button>
               ) : null}
 
               <div ref={bottomRef} />
