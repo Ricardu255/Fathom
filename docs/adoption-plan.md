@@ -16,16 +16,16 @@
 
 ## 1. 已落地（不再排期）
 
-| 事项 | 证据 |
-| --- | --- |
-| **并行工具执行** | `pi/tools.ts` 的 `executionModeForTool` + `PARALLEL_SAFE_TOOLS`：16 个只读工具并行，写/命令/审批/子 Agent/工作流类保持串行；`pi-engine.test.ts` |
-| **`agent_before_settle` 续轮边界** | `pi/auto-follow-up.ts` 的 `createAutoFollowUpExtension`，续轮不再靠 `message_end` 注入隐藏消息；`auto-follow-up.test.ts`。触发方式见 §2 |
-| **压缩/重试真实字段** | `pi/event-bridge.ts` 映射 `tokensBefore`、`estimatedTokensAfter`、`firstKeptEntryId` 与 `compactionStats.replacedMessages`；`pi-event-bridge.test.ts` |
-| **后台命令加固** | `services/background-command-service.ts` 的 `commandEnvironment`（环境变量白名单）与 `killProcessTree`，配合并发上限与环形缓冲；`background-command-service.test.ts` |
-| **跨 Agent 写锁与内容校验** | `pi/workspace-write-coordinator.ts`：同 realpath 串行、写入前比对观察内容、冲突抛 `WORKSPACE_CHANGED`；主 Agent 与子 Agent 共享同一实例（`session-engine`、`sub-agent-orchestrator`）；`workspace-write-coordinator.test.ts` |
-| **已结束会话恢复工具卡** | `services/session-projections.ts` 直接产出 `tools` 投影，`chat-store.hydrate` 消费 `snapshot.tools`；`session-projections.test.ts`、`chat-store.test.ts` |
-| **Trace 泳道 + Request 详情** | `services/trace-service.ts`、`features/trace/`：输入/模型/工具三泳道、请求圆点、审批/压缩标记、子 Agent 泳道、请求概要页签；`usage-trace.test.ts` |
-| **纸感 UI 层** | `styles/maison.css`、`components/PaperFrame.tsx`、Electron 窗口配色、字体本地化 |
+| 事项                               | 证据                                                                                                                                                                                                                         |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **并行工具执行**                   | `pi/tools.ts` 的 `executionModeForTool` + `PARALLEL_SAFE_TOOLS`：16 个只读工具并行，写/命令/审批/子 Agent/工作流类保持串行；`pi-engine.test.ts`                                                                              |
+| **`agent_before_settle` 续轮边界** | `pi/auto-follow-up.ts` 的 `createAutoFollowUpExtension`，续轮不再靠 `message_end` 注入隐藏消息；`auto-follow-up.test.ts`。触发方式见 §2                                                                                      |
+| **压缩/重试真实字段**              | `pi/event-bridge.ts` 映射 `tokensBefore`、`estimatedTokensAfter`、`firstKeptEntryId` 与 `compactionStats.replacedMessages`；`pi-event-bridge.test.ts`                                                                        |
+| **后台命令加固**                   | `services/background-command-service.ts` 的 `commandEnvironment`（环境变量白名单）与 `killProcessTree`，配合并发上限与环形缓冲；`background-command-service.test.ts`                                                         |
+| **跨 Agent 写锁与内容校验**        | `pi/workspace-write-coordinator.ts`：同 realpath 串行、写入前比对观察内容、冲突抛 `WORKSPACE_CHANGED`；主 Agent 与子 Agent 共享同一实例（`session-engine`、`sub-agent-orchestrator`）；`workspace-write-coordinator.test.ts` |
+| **已结束会话恢复工具卡**           | `services/session-projections.ts` 直接产出 `tools` 投影，`chat-store.hydrate` 消费 `snapshot.tools`；`session-projections.test.ts`、`chat-store.test.ts`                                                                     |
+| **Trace 泳道 + Request 详情**      | `services/trace-service.ts`、`features/trace/`：输入/模型/工具三泳道、请求圆点、审批/压缩标记、子 Agent 泳道、请求概要页签；`usage-trace.test.ts`                                                                            |
+| **纸感 UI 层**                     | `styles/maison.css`、`components/PaperFrame.tsx`、Electron 窗口配色、字体本地化                                                                                                                                              |
 
 > **pi 的批量语义（验收时别误判）**：`agent-loop` 的规则是“一批工具调用里只要有一个 `sequential`，**整批**都串行”，不是只串行那一个。因此一条消息里同时出现 `read_file` 与 `write_file` 时，读也拿不到并发。要真正的读写分离并发只能靠分批，不能靠工具标记。
 
@@ -40,80 +40,80 @@
 
 ## 3. 第一批：安全与正确性
 
-| 事项 | 动作 | 验收 |
-| --- | --- | --- |
-| **凭据隔离** | API Key 不再落 SQLite `settings`；改用独立 0600 凭据文件或 Electron `safeStorage`；SQLite 只存「是否配置 / 来源 / 脱敏预览」。同时统一 API Key 与 OAuth 的 CredentialStore，消除 SQLite 与 `auth.json` 双轨 | `settings.test.ts` 断言数据库中无明文；迁移旧明文后旧行被清空且不回显 |
-| **桌面信任边界** | 桌面启动随机 token → HttpOnly Cookie；比较用 `timingSafeEqual`；外部链接只允许 http/https；只允许 daemon origin 作为应用内窗口；`/__desktop/shutdown` 也要 token | `runtime.test.ts` 覆盖无 token 拒绝、非 http(s) 外链被拒、跨 origin 开窗被拒 |
-| **SSE / JSONL 加固** | 服务端读 `Last-Event-ID`；transient 重放窗口从 512 提高；JSONL 读取做 schema 校验，损坏行进入隔离区并报诊断，而不是 warning 后静默跳过 | 断线重连用例 + 中间损坏行用例（回放不丢后续事件） |
-| **JSONL schema 版本** | 文件头或事件带 `schemaVersion`；读取时按版本迁移，旧数据永远可回放 | 用旧版 JSONL 跑一遍快照与回放 |
-| **请求快照增量** | System/Tools 只在首次或变化时写入；长 Tool 结果固定首尾预算 | 同一长会话的 JSONL 体积前后对比 |
+| 事项                  | 动作                                                                                                                                                                                                        | 验收                                                                         |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **凭据隔离**          | API Key 不再落 SQLite `settings`；改用独立 0600 凭据文件或 Electron `safeStorage`；SQLite 只存「是否配置 / 来源 / 脱敏预览」。同时统一 API Key 与 OAuth 的 CredentialStore，消除 SQLite 与 `auth.json` 双轨 | `settings.test.ts` 断言数据库中无明文；迁移旧明文后旧行被清空且不回显        |
+| **桌面信任边界**      | 桌面启动随机 token → HttpOnly Cookie；比较用 `timingSafeEqual`；外部链接只允许 http/https；只允许 daemon origin 作为应用内窗口；`/__desktop/shutdown` 也要 token                                            | `runtime.test.ts` 覆盖无 token 拒绝、非 http(s) 外链被拒、跨 origin 开窗被拒 |
+| **SSE / JSONL 加固**  | 服务端读 `Last-Event-ID`；transient 重放窗口从 512 提高；JSONL 读取做 schema 校验，损坏行进入隔离区并报诊断，而不是 warning 后静默跳过                                                                      | 断线重连用例 + 中间损坏行用例（回放不丢后续事件）                            |
+| **JSONL schema 版本** | 文件头或事件带 `schemaVersion`；读取时按版本迁移，旧数据永远可回放                                                                                                                                          | 用旧版 JSONL 跑一遍快照与回放                                                |
+| **请求快照增量**      | System/Tools 只在首次或变化时写入；长 Tool 结果固定首尾预算                                                                                                                                                 | 同一长会话的 JSONL 体积前后对比                                              |
 
 ## 4. 第二批：长会话体验
 
-| 事项 | 动作 | 验收 |
-| --- | --- | --- |
-| **长会话虚拟化** | 替换 `ChatPage` 的 `slice(-visibleLimit)`；按 Turn 折叠旧工具/思考；末尾锚定且上滚时暂停跟随；侧栏运行 Spinner 与未读点；搜索命中定位到消息并短暂高亮 | Playwright：1000 条消息下虚拟化前后滚动位置一致 |
-| **Plans + Todos 胶囊** | 输入框上方一条折叠胶囊，同时显示 Plan 与 Todo 的完成数/当前项；展开为浮层，不挤动 Composer；Run 终态隐藏 | 组件测试 + 窄屏不遮挡输入 |
-| **统一 Inspector** | 文件变更、子 Agent、工作区文件树收进一个可调宽 Inspector；子 Agent 详情按 `afterSeq/limit` 分页读取；移动端变 sheet | 三处既有 Drawer 收敛为一个，交互不回归 |
-| **本地 Markdown 文件/图片链接** | 助手输出里的本地路径识别为文件/文件夹，带图标与完整路径 Tooltip；本地图片走受控 media API | 路径越界被拒 |
-| **自动标题** | 模型生成 + 失败回退首条输入 | 失败回退有测试 |
+| 事项                            | 动作                                                                                                                                                  | 验收                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **长会话虚拟化**                | 替换 `ChatPage` 的 `slice(-visibleLimit)`；按 Turn 折叠旧工具/思考；末尾锚定且上滚时暂停跟随；侧栏运行 Spinner 与未读点；搜索命中定位到消息并短暂高亮 | Playwright：1000 条消息下虚拟化前后滚动位置一致 |
+| **Plans + Todos 胶囊**          | 输入框上方一条折叠胶囊，同时显示 Plan 与 Todo 的完成数/当前项；展开为浮层，不挤动 Composer；Run 终态隐藏                                              | 组件测试 + 窄屏不遮挡输入                       |
+| **统一 Inspector**              | 文件变更、子 Agent、工作区文件树收进一个可调宽 Inspector；子 Agent 详情按 `afterSeq/limit` 分页读取；移动端变 sheet                                   | 三处既有 Drawer 收敛为一个，交互不回归          |
+| **本地 Markdown 文件/图片链接** | 助手输出里的本地路径识别为文件/文件夹，带图标与完整路径 Tooltip；本地图片走受控 media API                                                             | 路径越界被拒                                    |
+| **自动标题**                    | 模型生成 + 失败回退首条输入                                                                                                                           | 失败回退有测试                                  |
 
 ## 5. 第三批：记忆与检索
 
-| 事项 | 动作 | 验收 |
-| --- | --- | --- |
-| **RAG 评测集（先做）** | 为文献/记忆召回建固定查询集与指标（Recall@k、MRR） | 有基线数字，后续每次改检索都能对比 |
+| 事项                     | 动作                                                                                                                                                              | 验收                                     |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| **RAG 评测集（先做）**   | 为文献/记忆召回建固定查询集与指标（Recall@k、MRR）                                                                                                                | 有基线数字，后续每次改检索都能对比       |
 | **本地语义记忆（后做）** | 接入 `multilingual-e5-small`（q8 ONNX、首次下载缓存、失败回退 FTS）；补 user/workspace scope、来源 Session、revision 冲突；复用同一 embedder 给未来的 tool_search | 评测集上的 Recall@k 高于当前哈希向量基线 |
 
 顺序不能反：先换 embedder 再建评测集，等于没有基线。
 
 ## 6. 第四批：平台化（按需）
 
-| 事项 | 动作 | 验收 |
-| --- | --- | --- |
-| **结构化工具结果** | `ToolResult` 补 `structuredContent`、`annotations`（`readOnly`/`destructive`/`idempotent`）、长任务 `onUpdate` 进度；UI 与策略共用，不再把全部内容塞进文本 details | 至少一个工具端到端用上，UI 与策略读取同一字段 |
-| **Skills 规范对齐** | 支持标准 `SKILL.md` 的 `allowed-tools`、`license`、`compatibility`；保留 Run 预授权 + 内容指纹复查；发现规则对齐 pi 的 `.agents/skills`（**不是 `.claude/skills`**，见 §9） | 现有 skill 行为不回退 |
-| **分层重构** | `server.ts` 仍约 1290 行；新域（MCP、插件、评测）继续按 `routes/*` 拆分，响应 schema 与 DTO/VO 显式脱敏 | 拆分前后路由快照一致；先量化再动 |
-| **样式拆分** | `styles.css` 仍约 9550 行；`styles/maison.css` 作为设计层，后续按 chat / settings / trace / board 拆组件级样式 | 拆分前后首屏 CSS 体积有对比 |
-| **设置目录化** | 从锚点长页改为「左侧目录 + 右侧 720px 内容」 | 窄屏折叠为单列 |
+| 事项                | 动作                                                                                                                                                                        | 验收                                          |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **结构化工具结果**  | `ToolResult` 补 `structuredContent`、`annotations`（`readOnly`/`destructive`/`idempotent`）、长任务 `onUpdate` 进度；UI 与策略共用，不再把全部内容塞进文本 details          | 至少一个工具端到端用上，UI 与策略读取同一字段 |
+| **Skills 规范对齐** | 支持标准 `SKILL.md` 的 `allowed-tools`、`license`、`compatibility`；保留 Run 预授权 + 内容指纹复查；发现规则对齐 pi 的 `.agents/skills`（**不是 `.claude/skills`**，见 §9） | 现有 skill 行为不回退                         |
+| **分层重构**        | `server.ts` 仍约 1290 行；新域（MCP、插件、评测）继续按 `routes/*` 拆分，响应 schema 与 DTO/VO 显式脱敏                                                                     | 拆分前后路由快照一致；先量化再动              |
+| **样式拆分**        | `styles.css` 仍约 9550 行；`styles/maison.css` 作为设计层，后续按 chat / settings / trace / board 拆组件级样式                                                              | 拆分前后首屏 CSS 体积有对比                   |
+| **设置目录化**      | 从锚点长页改为「左侧目录 + 右侧 720px 内容」                                                                                                                                | 窄屏折叠为单列                                |
 
 ## 7. 后置（等里程碑决定，不排期）
 
-| 事项 | 触发条件 | 第一版范围 |
-| --- | --- | --- |
-| **MCP 最小 Host + tool_search** | `AGENTS.md` 规定 M1–M4 不实现 MCP；等里程碑解禁后再接 | 只做 stdio + Streamable HTTP；配置/凭据/信任分离；工具级启停与稳定别名；不做 Resources/Prompts/Elicitation/Sampling，也不追新协议版本 |
-| **Session tree / 分支摘要 / `context_edit`** | 已有 fork、分支树、对比与三方合并，差在“放弃分支摘要”和“只改模型上下文、不改审计历史”的编辑语义 | 会同时影响事件投影与测试，越晚做改动成本越高 |
-| **Durable 语义** | 只借 `requestId` 幂等、任务 phase checkpoint、`restartLimit` 熔断 | 不整体迁移到 pi 的 Experimental 运行时 |
+| 事项                                         | 触发条件                                                                                        | 第一版范围                                                                                                                            |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **MCP 最小 Host + tool_search**              | `AGENTS.md` 规定 M1–M4 不实现 MCP；等里程碑解禁后再接                                           | 只做 stdio + Streamable HTTP；配置/凭据/信任分离；工具级启停与稳定别名；不做 Resources/Prompts/Elicitation/Sampling，也不追新协议版本 |
+| **Session tree / 分支摘要 / `context_edit`** | 已有 fork、分支树、对比与三方合并，差在“放弃分支摘要”和“只改模型上下文、不改审计历史”的编辑语义 | 会同时影响事件投影与测试，越晚做改动成本越高                                                                                          |
+| **Durable 语义**                             | 只借 `requestId` 幂等、任务 phase checkpoint、`restartLimit` 熔断                               | 不整体迁移到 pi 的 Experimental 运行时                                                                                                |
 
 ## 8. 明确不做
 
-| 方向 | 原因 |
-| --- | --- |
-| **CLI / TUI / 终端产品形态** | Fathom 是本地图形工作台；不做 CLI 入口、交互式 PTY 或 TUI 渲染。 |
-| **完整插件市场 + 插件级 OAuth Gateway** | pi-harness 的价值建立在大量内容与凭据/生命周期设施上；直接搬会引入巨大安全面与维护量。只借 manifest 形状或文档类 Skill。 |
-| **Computer Use** | macOS 原生 helper、辅助功能/屏幕录制权限、稳定签名、脚本运行时；除非产品核心变成桌面操作，否则不做。 |
-| **Tauri 重写** | 已有 Electron、sidecar、数据/缓存目录迁移与安装包；只借 bootstrap token、HTTPS-only 外链、发布/签名流程。 |
-| **GitHub 登录 / 多用户认证** | Fathom 是单用户本地应用；多用户认证扩大攻击面且无收益。 |
-| **Codemode / QuickJS 工具脚本** | pi 用 QuickJS(wasm) 跑模型写的脚本；会引入工具暴露、沙箱资源、脚本审计等复杂度，工作流/DAG 已覆盖主要编排需求。 |
-| **复刻 pi 的 System Prompt 分段装配 + 压缩重放** | 会与现有 pi 压缩 + 确定性 checkpoint 双重执行；只借快照增量与固定投影边界。 |
-| **pi-harness 的子 Agent 硬限制** | 每个 Agent 3 个直接子任务、2 层嵌套、30 分钟是参考项目的取舍；Fathom 的 DAG 与预算更灵活，不回退。 |
-| **pi-harness 的任务看板状态推进** | 它按「最后收到的相关事件」更新，两个子任务同时等审批时会丢状态；Fathom 已有聚合。只借 HITL 等待归约与 Plan 进度。 |
-| **HeroUI 视觉身份** | 保留 Fathom 的纸感主题；只借布局、语义色、交互结构。 |
-| **富内容块协议（chart / flow）** | 已有 KaTeX 与 Mermaid 覆盖主要需求；chart/flow 需要严格 schema 与额外渲染库，对本地工作台收益低。 |
-| **自建模型目录缓存** | pi 的 `ModelRuntime` 已内置 ETag/Last-Modified 增量与失败保留旧快照，我们已经在用（`pi/model.ts`），无需自建。 |
+| 方向                                             | 原因                                                                                                                     |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| **CLI / TUI / 终端产品形态**                     | Fathom 是本地图形工作台；不做 CLI 入口、交互式 PTY 或 TUI 渲染。                                                         |
+| **完整插件市场 + 插件级 OAuth Gateway**          | pi-harness 的价值建立在大量内容与凭据/生命周期设施上；直接搬会引入巨大安全面与维护量。只借 manifest 形状或文档类 Skill。 |
+| **Computer Use**                                 | macOS 原生 helper、辅助功能/屏幕录制权限、稳定签名、脚本运行时；除非产品核心变成桌面操作，否则不做。                     |
+| **Tauri 重写**                                   | 已有 Electron、sidecar、数据/缓存目录迁移与安装包；只借 bootstrap token、HTTPS-only 外链、发布/签名流程。                |
+| **GitHub 登录 / 多用户认证**                     | Fathom 是单用户本地应用；多用户认证扩大攻击面且无收益。                                                                  |
+| **Codemode / QuickJS 工具脚本**                  | pi 用 QuickJS(wasm) 跑模型写的脚本；会引入工具暴露、沙箱资源、脚本审计等复杂度，工作流/DAG 已覆盖主要编排需求。          |
+| **复刻 pi 的 System Prompt 分段装配 + 压缩重放** | 会与现有 pi 压缩 + 确定性 checkpoint 双重执行；只借快照增量与固定投影边界。                                              |
+| **pi-harness 的子 Agent 硬限制**                 | 每个 Agent 3 个直接子任务、2 层嵌套、30 分钟是参考项目的取舍；Fathom 的 DAG 与预算更灵活，不回退。                       |
+| **pi-harness 的任务看板状态推进**                | 它按「最后收到的相关事件」更新，两个子任务同时等审批时会丢状态；Fathom 已有聚合。只借 HITL 等待归约与 Plan 进度。        |
+| **HeroUI 视觉身份**                              | 保留 Fathom 的纸感主题；只借布局、语义色、交互结构。                                                                     |
+| **富内容块协议（chart / flow）**                 | 已有 KaTeX 与 Mermaid 覆盖主要需求；chart/flow 需要严格 schema 与额外渲染库，对本地工作台收益低。                        |
+| **自建模型目录缓存**                             | pi 的 `ModelRuntime` 已内置 ETag/Last-Modified 增量与失败保留旧快照，我们已经在用（`pi/model.ts`），无需自建。           |
 
 ## 9. 本轮核对更正的参考项目事实
 
 原清单有几处归错了主体或引用了并不存在的行为，后续不要再沿用：
 
-| 原表述 | 更正 |
-| --- | --- |
-| 「pi 的子 Agent 硬限制 3/2/30」 | pi-main 明确不内置子 Agent 与 plan mode（见其 README）；3 个直接子任务 / 2 层 / 30 分钟是 **pi-harness-main** 的取值。 |
-| 「pi 的任务看板状态机」 | pi-main 没有任务看板；「最后收到的事件覆盖状态」出自 pi-harness-main 的看板设计。 |
+| 原表述                                       | 更正                                                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 「pi 的子 Agent 硬限制 3/2/30」              | pi-main 明确不内置子 Agent 与 plan mode（见其 README）；3 个直接子任务 / 2 层 / 30 分钟是 **pi-harness-main** 的取值。                           |
+| 「pi 的任务看板状态机」                      | pi-main 没有任务看板；「最后收到的事件覆盖状态」出自 pi-harness-main 的看板设计。                                                                |
 | 「补 `.claude/skills` / `~/.claude/skills`」 | pi 现行代码发现的是 `~/.pi/agent/skills`、`.pi/skills`、`~/.agents/skills`、`.agents/skills`，没有 `.claude/skills`。目标改为 `.agents/skills`。 |
-| 「每个后台 Session 一条 SSE」 | pi-harness 也只给当前可见会话开 SSE（外加子 Agent 详情一条），与 Fathom 取舍相同，不构成反面案例。 |
-| 「pi 的 Context Pipeline」 | pi 没有这个命名的组件；最接近的是 System Prompt 分段装配与 `compaction`。 |
-| 「模型目录缓存需要自建」 | pi 的 `ModelRuntime` 已提供，见 §8。 |
+| 「每个后台 Session 一条 SSE」                | pi-harness 也只给当前可见会话开 SSE（外加子 Agent 详情一条），与 Fathom 取舍相同，不构成反面案例。                                               |
+| 「pi 的 Context Pipeline」                   | pi 没有这个命名的组件；最接近的是 System Prompt 分段装配与 `compaction`。                                                                        |
+| 「模型目录缓存需要自建」                     | pi 的 `ModelRuntime` 已提供，见 §8。                                                                                                             |
 
 ## 10. 工程要求
 
