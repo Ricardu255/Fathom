@@ -7,6 +7,8 @@
 事件持久化/回放、上下文压缩、运行中排队、Todos、文件 diff、自动重试、文献 PDF 解析、RAG，
 以及多 Agent DAG 与用户自建任务看板。
 
+![Fathom 主界面](docs/images/home.png)
+
 ## 现在能做什么
 
 - **pi 执行内核**：Session 持久化、上下文压缩、follow-up 队列、steering、自动重试由 pi SDK 提供；daemon/Web 是我们的外壳。
