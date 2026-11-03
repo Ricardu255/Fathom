@@ -28,6 +28,7 @@ import {
   BackgroundCommandServiceError,
 } from "./services/background-command-service";
 import { type BoardTaskService, BoardTaskServiceError } from "./services/board-task-service";
+import { DESKTOP_TOKEN_HEADER, matchesDesktopToken } from "./services/desktop-token";
 import type { SessionEventBus } from "./services/event-bus";
 import { FileChangeService, FileChangeServiceError } from "./services/file-change-service";
 import { type GitService, GitServiceError } from "./services/git-service";
@@ -66,6 +67,7 @@ export interface ServerDependencies {
   ) => readonly KnowledgeHit[] | Promise<readonly KnowledgeHit[]>;
   literature: LiteratureService;
   memory: MemoryService;
+  onDesktopShutdown?: (() => void) | undefined;
   providerOAuth?: ProviderOAuthService | undefined;
   providerSettings?: ProviderSettingsService | undefined;
   sessionSearch: SessionSearchService;
@@ -215,6 +217,7 @@ export async function createServer(dependencies: ServerDependencies): Promise<Fa
     knowledge,
     literature,
     memory,
+    onDesktopShutdown,
     providerOAuth,
     providerSettings,
     sessionSearch,
@@ -442,6 +445,23 @@ export async function createServer(dependencies: ServerDependencies): Promise<Fa
       ok: true,
       version: "0.1.0",
     };
+  });
+
+  // 桌面专用入口：只有拿到启动令牌的桌面壳才能调用。没有令牌时按「不存在」处理，
+  // 避免向本机其他进程暴露这个能力。
+  server.post("/__desktop/shutdown", async (request, reply) => {
+    if (config.desktopToken === undefined) {
+      return reply.status(404).send({ code: "NOT_FOUND", message: "桌面接口未启用" });
+    }
+    const header = request.headers[DESKTOP_TOKEN_HEADER];
+    if (
+      !matchesDesktopToken(typeof header === "string" ? header : undefined, config.desktopToken)
+    ) {
+      return reply.status(403).send({ code: "INVALID_DESKTOP_TOKEN", message: "桌面令牌无效" });
+    }
+    await reply.status(202).send({ ok: true });
+    onDesktopShutdown?.();
+    return reply;
   });
 
   const settingsView = () => {

@@ -187,6 +187,12 @@ const server = await createServer({
   knowledge: (query, limit, kinds) => database.searchKnowledge(query, limit, kinds),
   literature,
   memory,
+  onDesktopShutdown: () => {
+    void shutdown("desktop").catch((error: unknown) => {
+      console.error("关闭失败", error);
+      process.exitCode = 1;
+    });
+  },
   providerOAuth,
   providerSettings,
   sessionSearch,

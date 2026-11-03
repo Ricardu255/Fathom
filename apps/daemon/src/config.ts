@@ -14,6 +14,7 @@ const EnvironmentSchema = z.object({
   HARNESS_ANTHROPIC_API_KEY: optionalString,
   HARNESS_AUTO_FOLLOW_UP_MAX: optionalString,
   HARNESS_DATA_DIR: optionalString,
+  HARNESS_DESKTOP_TOKEN: optionalString,
   HARNESS_EMBEDDING_API_KEY: optionalString,
   HARNESS_EMBEDDING_DIMENSIONS: optionalString,
   HARNESS_EMBEDDING_MODEL: optionalString,
@@ -43,6 +44,8 @@ export interface HarnessConfig {
   anthropicApiKey: string | undefined;
   autoFollowUpMax: number;
   dataDir: string;
+  /** 桌面壳每次启动生成、经环境变量传入；只有它发起的请求才能调用桌面专用接口。 */
+  desktopToken: string | undefined;
   embeddingApiKey: string | undefined;
   embeddingDimensions: number;
   embeddingModel: string;
@@ -111,6 +114,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Harnes
       32,
     ),
     dataDir,
+    desktopToken: env.HARNESS_DESKTOP_TOKEN,
     embeddingApiKey: env.HARNESS_EMBEDDING_API_KEY,
     embeddingDimensions: parseInteger(
       env.HARNESS_EMBEDDING_DIMENSIONS ?? "1536",

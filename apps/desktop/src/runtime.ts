@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
 import { join } from "node:path";
 
@@ -7,6 +8,46 @@ export interface DesktopPaths {
   dataDir: string;
   webDist: string;
   workspace: string;
+}
+
+export type LinkDecision =
+  | { action: "allow" }
+  | { action: "deny" }
+  | { action: "external"; url: string };
+
+/** 只有 http/https 能交给系统浏览器；file、smb、自定义 scheme 一律不接手。 */
+export function parseExternalUrl(candidate: string): string | null {
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 应用内窗口只认 daemon 自己的 origin。其余 http(s) 交给系统浏览器，别的协议直接拒绝：
+ * 把未知 scheme 递给 shell.openExternal，等于把「用什么程序打开」的决定权交给页面。
+ */
+export function decideLink(url: string, daemonOrigin: string): LinkDecision {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { action: "deny" };
+  }
+  try {
+    if (parsed.origin === new URL(daemonOrigin).origin) return { action: "allow" };
+  } catch {
+    return { action: "deny" };
+  }
+  const external = parseExternalUrl(url);
+  return external === null ? { action: "deny" } : { action: "external", url: external };
+}
+
+/** 每次启动重新生成，用来区分「桌面壳发来的请求」和「本机其他进程」。 */
+export function createDesktopToken(): string {
+  return randomBytes(32).toString("hex");
 }
 
 export function resolveDesktopPaths(input: {
@@ -48,6 +89,7 @@ export function resolveDesktopPaths(input: {
 
 export function buildDaemonEnv(input: {
   dataDir: string;
+  desktopToken?: string;
   port: number;
   webDist: string;
   workspace: string;
@@ -55,6 +97,7 @@ export function buildDaemonEnv(input: {
   const origin = `http://127.0.0.1:${input.port}`;
   return {
     HARNESS_DATA_DIR: input.dataDir,
+    HARNESS_DESKTOP_TOKEN: input.desktopToken ?? "",
     HARNESS_ENGINE: "pi",
     HARNESS_HOST: "127.0.0.1",
     HARNESS_PORT: String(input.port),

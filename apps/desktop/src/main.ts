@@ -4,7 +4,14 @@ import { stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { OpenDialogOptions } from "electron";
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
-import { buildDaemonEnv, findFreePort, resolveDesktopPaths, waitForHealth } from "./runtime";
+import {
+  buildDaemonEnv,
+  createDesktopToken,
+  decideLink,
+  findFreePort,
+  resolveDesktopPaths,
+  waitForHealth,
+} from "./runtime";
 import {
   defaultStoragePaths,
   isPathInside,
@@ -54,6 +61,7 @@ if (!gotLock) {
   let daemon: ChildProcess | null = null;
   let serverOrigin: string | null = null;
   let activeStorage: StoragePaths | null = null;
+  const desktopToken = createDesktopToken();
 
   function log(message: string): void {
     earlyLog(message);
@@ -131,6 +139,7 @@ if (!gotLock) {
       ...process.env,
       ...buildDaemonEnv({
         dataDir: paths.dataDir,
+        desktopToken,
         port,
         webDist: paths.webDist,
         workspace: paths.workspace,
@@ -332,16 +341,15 @@ if (!gotLock) {
       mainWindow = null;
     });
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-      if (url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:")) {
-        return { action: "allow" };
-      }
-      void shell.openExternal(url);
-      return { action: "deny" };
+      const decision = decideLink(url, origin);
+      if (decision.action === "external") void shell.openExternal(decision.url);
+      return decision.action === "allow" ? { action: "allow" } : { action: "deny" };
     });
     mainWindow.webContents.on("will-navigate", (event, url) => {
-      if (url.startsWith(origin)) return;
+      const decision = decideLink(url, origin);
+      if (decision.action === "allow") return;
       event.preventDefault();
-      void shell.openExternal(url);
+      if (decision.action === "external") void shell.openExternal(decision.url);
     });
     mainWindow.webContents.on("render-process-gone", (_event, details) => {
       log(`renderer gone ${JSON.stringify(details)}`);
@@ -380,6 +388,29 @@ if (!gotLock) {
     }
   }
 
+  /**
+   * 优先让 daemon 自己收尾。直接 taskkill 会打断进行中的 SQLite/JSONL 写入，
+   * 而重启路径后面紧跟着数据目录迁移，正是最怕写坏的时刻。
+   * 拿不到令牌或请求失败时由调用方回退到硬杀。
+   */
+  async function requestGracefulShutdown(): Promise<boolean> {
+    const origin = serverOrigin;
+    if (origin === null) return false;
+    try {
+      const response = await fetch(`${origin}/__desktop/shutdown`, {
+        headers: {
+          origin,
+          "x-fathom-desktop-token": desktopToken,
+          "x-harness-request": "1",
+        },
+        method: "POST",
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   /** 等 daemon 退出后再重启，避免迁移数据时仍有 SQLite/JSONL 写入。 */
   function restartApplication(): void {
     quitting = true;
@@ -401,8 +432,10 @@ if (!gotLock) {
       if (timer !== undefined) clearTimeout(timer);
       relaunch();
     };
-    timer = setTimeout(finish, 3_000);
+    timer = setTimeout(finish, 5_000);
     child.once("exit", finish);
-    terminateDaemon(child);
+    void requestGracefulShutdown().then((ok) => {
+      if (!ok) terminateDaemon(child);
+    });
   }
 }
