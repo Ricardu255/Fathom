@@ -64,6 +64,52 @@ test("请求快照会省略图片 base64、截断超长文本并丢弃最旧消�
   const serialized = JSON.stringify(snapshot.messages);
   assert.doesNotMatch(serialized, /a{1000}/u);
   assert.match(serialized, /base64 omitted/u);
-  assert.match(serialized, /truncated/u);
+  assert.match(serialized, /省略 \d+ 字符/u);
   assert.ok((snapshot.tools[0]?.description.length ?? 0) <= 2_100);
+});
+
+test("超长文本保留首尾，中间省略", () => {
+  const snapshot = buildRequestSnapshot({
+    messages: [
+      {
+        content: [{ text: `${"H".repeat(20_000)}TAIL_MARKER`, type: "text" }],
+        role: "user",
+      },
+    ],
+    model: "test-model",
+    requestIndex: 1,
+    runId: null,
+    systemPrompt: "system",
+    tools: [],
+  });
+  const serialized = JSON.stringify(snapshot.messages);
+  assert.match(serialized, /省略 \d+ 字符/u);
+  // 工具输出末尾通常是结论或错误行，不能只留开头。
+  assert.match(serialized, /TAIL_MARKER/u);
+});
+
+test("System Prompt 与工具未变化时只写标记，token 估算仍按完整内容", () => {
+  const base = {
+    messages: [],
+    model: "test-model",
+    runId: null,
+    systemPrompt: "system",
+    tools: [{ description: "读取文件", inputSchema: {}, name: "read_file" }],
+  };
+  const first = buildRequestSnapshot({ ...base, requestIndex: 1 });
+  assert.equal(first.systemPrompt, "system");
+  assert.equal(first.systemPromptUnchanged, undefined);
+  assert.equal(first.tools.length, 1);
+
+  const second = buildRequestSnapshot({
+    ...base,
+    requestIndex: 2,
+    reuseSystemPrompt: true,
+    reuseTools: true,
+  });
+  assert.equal(second.systemPrompt, "");
+  assert.equal(second.systemPromptUnchanged, true);
+  assert.deepEqual(second.tools, []);
+  assert.equal(second.toolsUnchanged, true);
+  assert.equal(second.estimatedInputTokens, first.estimatedInputTokens);
 });

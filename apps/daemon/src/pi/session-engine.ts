@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import {
   type AgentSession,
@@ -139,6 +139,8 @@ export class PiSessionEngine {
   private pendingCompactionTrigger: "auto" | "manual" = "auto";
   private restoredCheckpoint: CheckpointRestoredData | null = null;
   private systemPrompt = "";
+  /** 上一份快照里 System Prompt 与工具定义的指纹，用来跳过重复写入。 */
+  private snapshotContent: { prompt: string; tools: string } | null = null;
   private toolDefinitions: readonly ToolDefinition[] = [];
   private autoFollowUpCount = 0;
   private autoFollowUpPending = false;
@@ -197,19 +199,7 @@ export class PiSessionEngine {
         },
         compactionStats: (firstKeptEntryId) => this.getCompactionStats(firstKeptEntryId),
         onQueueUpdate: () => undefined,
-        onRequestSnapshot: (requestIndex) =>
-          buildRequestSnapshot({
-            messages: this.piSession?.messages ?? [],
-            model: this.modelSetup.modelId,
-            requestIndex,
-            runId: this.runId,
-            systemPrompt: this.systemPrompt,
-            tools: this.toolDefinitions.map((tool) => ({
-              description: tool.description ?? "",
-              inputSchema: tool.parameters ?? {},
-              name: tool.name,
-            })),
-          }),
+        onRequestSnapshot: (requestIndex) => this.buildSnapshotForRequest(requestIndex),
         onSettled: () => {
           void this.orchestrator?.abortAll();
           this.planMode = false;
@@ -487,6 +477,33 @@ export class PiSessionEngine {
     if (this.planMode || this.autoFollowUpCount >= this.config.autoFollowUpMax) return false;
     this.autoFollowUpCount += 1;
     return true;
+  }
+
+  /**
+   * System Prompt 与工具定义在一轮对话里几乎不变，但每份请求快照都存一遍会让
+   * 长会话的 JSONL 成倍膨胀。这里按指纹判断，只有真正变化时才重写正文。
+   */
+  private buildSnapshotForRequest(requestIndex: number) {
+    const tools = this.toolDefinitions.map((tool) => ({
+      description: tool.description ?? "",
+      inputSchema: tool.parameters ?? {},
+      name: tool.name,
+    }));
+    const promptDigest = digest(this.systemPrompt);
+    const toolsDigest = digest(JSON.stringify(tools));
+    const reuseSystemPrompt = this.snapshotContent?.prompt === promptDigest;
+    const reuseTools = this.snapshotContent?.tools === toolsDigest;
+    this.snapshotContent = { prompt: promptDigest, tools: toolsDigest };
+    return buildRequestSnapshot({
+      messages: this.piSession?.messages ?? [],
+      model: this.modelSetup.modelId,
+      requestIndex,
+      reuseSystemPrompt,
+      reuseTools,
+      runId: this.runId,
+      systemPrompt: this.systemPrompt,
+      tools,
+    });
   }
 
   private getCompactionStats(firstKeptEntryId: string): {
@@ -943,4 +960,8 @@ function lastAssistantText(messages: readonly unknown[]): string {
       .trim();
   }
   return "";
+}
+
+function digest(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }

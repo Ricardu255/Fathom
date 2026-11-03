@@ -249,7 +249,11 @@ export interface RequestSnapshotData {
   requestIndex: number;
   runId: string | null;
   systemPrompt: string;
+  /** 与上一份快照相同，内容没有重复写入；`systemPrompt` 此时为空串。 */
+  systemPromptUnchanged?: boolean;
   tools: RequestSnapshotTool[];
+  /** 与上一份快照相同，内容没有重复写入；`tools` 此时为空数组。 */
+  toolsUnchanged?: boolean;
   truncated: boolean;
 }
 

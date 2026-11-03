@@ -549,8 +549,12 @@ function RequestDetail({ onClose, request }: { onClose: () => void; request: Tra
               {tab === "messages"
                 ? stringify(request.messages)
                 : tab === "prompt"
-                  ? request.systemPrompt
-                  : stringify(request.tools)}
+                  ? request.systemPromptUnchanged === true
+                    ? UNCHANGED_SNAPSHOT_HINT
+                    : request.systemPrompt
+                  : request.toolsUnchanged === true
+                    ? UNCHANGED_SNAPSHOT_HINT
+                    : stringify(request.tools)}
             </pre>
           )}
         </div>
@@ -558,6 +562,8 @@ function RequestDetail({ onClose, request }: { onClose: () => void; request: Tra
     </div>
   );
 }
+
+const UNCHANGED_SNAPSHOT_HINT = "（与上一份请求快照相同，未重复记录）";
 
 function stringify(value: unknown): string {
   return JSON.stringify(value, null, 2) ?? String(value);

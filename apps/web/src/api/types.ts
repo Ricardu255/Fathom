@@ -112,8 +112,12 @@ export interface TraceRequest {
   requestIndex: number;
   seq: number;
   systemPrompt: string;
+  /** 与上一份快照相同，正文没有重复记录。 */
+  systemPromptUnchanged?: boolean;
   timestamp: number;
   tools: unknown[];
+  /** 与上一份快照相同，正文没有重复记录。 */
+  toolsUnchanged?: boolean;
 }
 
 export interface TraceCompaction {
