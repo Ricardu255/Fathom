@@ -16,16 +16,21 @@
 
 ## 1. 已落地（不再排期）
 
-| 事项                               | 证据                                                                                                                                                                                                                         |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **并行工具执行**                   | `pi/tools.ts` 的 `executionModeForTool` + `PARALLEL_SAFE_TOOLS`：16 个只读工具并行，写/命令/审批/子 Agent/工作流类保持串行；`pi-engine.test.ts`                                                                              |
-| **`agent_before_settle` 续轮边界** | `pi/auto-follow-up.ts` 的 `createAutoFollowUpExtension`，续轮不再靠 `message_end` 注入隐藏消息；`auto-follow-up.test.ts`。触发方式见 §2                                                                                      |
-| **压缩/重试真实字段**              | `pi/event-bridge.ts` 映射 `tokensBefore`、`estimatedTokensAfter`、`firstKeptEntryId` 与 `compactionStats.replacedMessages`；`pi-event-bridge.test.ts`                                                                        |
-| **后台命令加固**                   | `services/background-command-service.ts` 的 `commandEnvironment`（环境变量白名单）与 `killProcessTree`，配合并发上限与环形缓冲；`background-command-service.test.ts`                                                         |
-| **跨 Agent 写锁与内容校验**        | `pi/workspace-write-coordinator.ts`：同 realpath 串行、写入前比对观察内容、冲突抛 `WORKSPACE_CHANGED`；主 Agent 与子 Agent 共享同一实例（`session-engine`、`sub-agent-orchestrator`）；`workspace-write-coordinator.test.ts` |
-| **已结束会话恢复工具卡**           | `services/session-projections.ts` 直接产出 `tools` 投影，`chat-store.hydrate` 消费 `snapshot.tools`；`session-projections.test.ts`、`chat-store.test.ts`                                                                     |
-| **Trace 泳道 + Request 详情**      | `services/trace-service.ts`、`features/trace/`：输入/模型/工具三泳道、请求圆点、审批/压缩标记、子 Agent 泳道、请求概要页签；`usage-trace.test.ts`                                                                            |
-| **纸感 UI 层**                     | `styles/maison.css`、`components/PaperFrame.tsx`、Electron 窗口配色、字体本地化                                                                                                                                              |
+| 事项                               | 证据                                                                                                                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **并行工具执行**                   | `pi/tools.ts` 的 `executionModeForTool` + `PARALLEL_SAFE_TOOLS`：16 个只读工具并行，写/命令/审批/子 Agent/工作流类保持串行；`pi-engine.test.ts`                                                                                            |
+| **`agent_before_settle` 续轮边界** | `pi/auto-follow-up.ts` 的 `createAutoFollowUpExtension`，续轮不再靠 `message_end` 注入隐藏消息；`auto-follow-up.test.ts`。触发方式见 §2                                                                                                    |
+| **压缩/重试真实字段**              | `pi/event-bridge.ts` 映射 `tokensBefore`、`estimatedTokensAfter`、`firstKeptEntryId` 与 `compactionStats.replacedMessages`；`pi-event-bridge.test.ts`                                                                                      |
+| **后台命令加固**                   | `services/background-command-service.ts` 的 `commandEnvironment`（环境变量白名单）与 `killProcessTree`，配合并发上限与环形缓冲；`background-command-service.test.ts`                                                                       |
+| **跨 Agent 写锁与内容校验**        | `pi/workspace-write-coordinator.ts`：同 realpath 串行、写入前比对观察内容、冲突抛 `WORKSPACE_CHANGED`；主 Agent 与子 Agent 共享同一实例（`session-engine`、`sub-agent-orchestrator`）；`workspace-write-coordinator.test.ts`               |
+| **已结束会话恢复工具卡**           | `services/session-projections.ts` 直接产出 `tools` 投影，`chat-store.hydrate` 消费 `snapshot.tools`；`session-projections.test.ts`、`chat-store.test.ts`                                                                                   |
+| **Trace 泳道 + Request 详情**      | `services/trace-service.ts`、`features/trace/`：输入/模型/工具三泳道、请求圆点、审批/压缩标记、子 Agent 泳道、请求概要页签；`usage-trace.test.ts`                                                                                          |
+| **纸感 UI 层**                     | `styles/maison.css`、`components/PaperFrame.tsx`、Electron 窗口配色、字体本地化                                                                                                                                                            |
+| **凭据隔离**                       | `services/provider-credential-store.ts`：API Key 落到 `data/credentials.json`（原子写 + 0600），旧 `model_api_key:*` 启动时迁移并删除；`apiKeySource` 改为 `credentials`；`provider-credential-store.test.ts`、`provider-settings.test.ts` |
+| **桌面信任边界**                   | `runtime.ts` 的 `decideLink`：只有 daemon origin 留在应用内，其余 http(s) 交系统浏览器，其他 scheme 一律拒绝；桌面每次启动生成 token，`/__desktop/shutdown` 用 `timingSafeEqual` 校验；`runtime.test.ts`、`desktop-token.test.ts`          |
+| **SSE / JSONL 加固**               | `services/event-cursor.ts` 支持 `Last-Event-ID`；transient 重放缓冲 512 → 2048；无法解析的 JSONL 行写入 `.corrupt.jsonl` 而不是只打 warning；`event-cursor.test.ts`、`event-store.test.ts`                                                 |
+| **JSONL schema 版本**              | `storage/event-store.ts` 的新文件带 `session.header` 版本头，旧文件按版本 1 回放，更新版本只告警；`event-store.test.ts`                                                                                                                    |
+| **请求快照增量**                   | `services/request-snapshot.ts` 在 System Prompt / 工具定义未变化时只写标记，长文本保留首尾；`request-snapshot.test.ts`                                                                                                                     |
 
 > **pi 的批量语义（验收时别误判）**：`agent-loop` 的规则是“一批工具调用里只要有一个 `sequential`，**整批**都串行”，不是只串行那一个。因此一条消息里同时出现 `read_file` 与 `write_file` 时，读也拿不到并发。要真正的读写分离并发只能靠分批，不能靠工具标记。
 
@@ -38,15 +43,15 @@
 
 选 A 只需把验收对齐到已有实现；选 B 是一次独立改动。
 
-## 3. 第一批：安全与正确性
+## 3. 第一批：安全与正确性（已完成，证据见 §1）
 
-| 事项                  | 动作                                                                                                                                                                                                        | 验收                                                                         |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **凭据隔离**          | API Key 不再落 SQLite `settings`；改用独立 0600 凭据文件或 Electron `safeStorage`；SQLite 只存「是否配置 / 来源 / 脱敏预览」。同时统一 API Key 与 OAuth 的 CredentialStore，消除 SQLite 与 `auth.json` 双轨 | `settings.test.ts` 断言数据库中无明文；迁移旧明文后旧行被清空且不回显        |
-| **桌面信任边界**      | 桌面启动随机 token → HttpOnly Cookie；比较用 `timingSafeEqual`；外部链接只允许 http/https；只允许 daemon origin 作为应用内窗口；`/__desktop/shutdown` 也要 token                                            | `runtime.test.ts` 覆盖无 token 拒绝、非 http(s) 外链被拒、跨 origin 开窗被拒 |
-| **SSE / JSONL 加固**  | 服务端读 `Last-Event-ID`；transient 重放窗口从 512 提高；JSONL 读取做 schema 校验，损坏行进入隔离区并报诊断，而不是 warning 后静默跳过                                                                      | 断线重连用例 + 中间损坏行用例（回放不丢后续事件）                            |
-| **JSONL schema 版本** | 文件头或事件带 `schemaVersion`；读取时按版本迁移，旧数据永远可回放                                                                                                                                          | 用旧版 JSONL 跑一遍快照与回放                                                |
-| **请求快照增量**      | System/Tools 只在首次或变化时写入；长 Tool 结果固定首尾预算                                                                                                                                                 | 同一长会话的 JSONL 体积前后对比                                              |
+五项全部落地：凭据隔离、桌面信任边界、SSE/JSONL 加固、JSONL schema 版本、请求快照增量。
+
+与原始设想的差异，记录一下免得后来人照旧文档做：
+
+- **桌面令牌用请求头而不是 HttpOnly Cookie**：Cookie 会被该 origin 下任何页面自动带上，只有主进程能设的请求头才是更强的边界。
+- **`/__desktop/shutdown` 是新增的**，原先并不存在；它同时给了桌面端一条优雅退出的路径，重启前不必再直接 `taskkill`。
+- **未做 Electron `safeStorage`**：daemon 是独立进程，拿不到 `safeStorage`；改为独立凭据文件（0600 尽力设置），并保留「文件不在 SQLite 里」这个核心不变式。
 
 ## 4. 第二批：长会话体验
 
