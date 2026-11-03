@@ -7,12 +7,15 @@ import type {
   CustomProviderRecord,
   HarnessDatabase,
 } from "../storage/database";
+import type { ProviderCredentialStore } from "./provider-credential-store";
 
 const PROVIDER_KEY = "model_provider";
 const MODEL_KEY = "model_id";
 const THINKING_KEY = "model_thinking_level";
 const MOCK_KEY = "model_mock";
-const API_KEY_PREFIX = "model_api_key:";
+
+/** 旧版把明文 Key 写在这个前缀下；现在只用来做一次性迁移。 */
+const LEGACY_API_KEY_PREFIX = "model_api_key:";
 
 export interface ProviderChoices {
   id: string;
@@ -105,7 +108,7 @@ function normalizeCustomModels(input: readonly CustomProviderModel[]): CustomPro
 
 export interface ModelSettingsView {
   apiKeyConfigured: boolean;
-  apiKeySource: "environment" | "settings" | null;
+  apiKeySource: "environment" | "credentials" | null;
   mock: boolean;
   modelId: string;
   models: ModelChoices[];
@@ -138,20 +141,38 @@ export class ModelSettingsError extends Error {
   }
 }
 
-function storedApiKey(database: HarnessDatabase, providerId: string): string | undefined {
-  const value = database.getSetting(`${API_KEY_PREFIX}${providerId}`)?.trim();
-  return value === undefined || value === "" ? undefined : value;
+/**
+ * 把旧版存在 SQLite settings 里的明文 API Key 搬进凭据文件，并清掉旧行。
+ *
+ * 必须在读取模型选择之前执行：否则升级后的第一次启动会因为「settings 里没有 Key」而回退 Mock。
+ * 无论是否迁移成功，SQLite 里的明文行都要删掉——留在那里就等于没做隔离。
+ */
+export async function migrateLegacyCredentials(
+  database: HarnessDatabase,
+  credentials: ProviderCredentialStore,
+): Promise<number> {
+  const legacy = database.listSettingsByPrefix(LEGACY_API_KEY_PREFIX);
+  if (legacy.length === 0) return 0;
+  const entries = new Map<string, string>();
+  for (const { key, value } of legacy) {
+    const providerId = key.slice(LEGACY_API_KEY_PREFIX.length);
+    if (providerId !== "") entries.set(providerId, value);
+  }
+  const adopted = await credentials.adopt(entries);
+  for (const { key } of legacy) database.deleteSetting(key);
+  return adopted;
 }
 
 /** 启动时读取用户持久化的模型选择；没有 Key 时回退到 Mock，避免 daemon 无法启动。 */
 export function readStoredModelSelection(
   database: HarnessDatabase,
   config: HarnessConfig,
+  credentials: ProviderCredentialStore,
 ): StoredModelSelection {
   const providerId = database.getSetting(PROVIDER_KEY)?.trim() || "anthropic";
   const modelId = database.getSetting(MODEL_KEY)?.trim() || config.model;
   const apiKey =
-    storedApiKey(database, providerId) ??
+    credentials.get(providerId) ??
     (providerId === "anthropic" ? config.anthropicApiKey : undefined);
   const storedMock = database.getSetting(MOCK_KEY);
   const mock =
@@ -173,19 +194,20 @@ export class ProviderSettingsService {
   public constructor(
     private readonly options: {
       config: HarnessConfig;
+      credentials: ProviderCredentialStore;
       database: HarnessDatabase;
       modelSetup: PiModelSetup;
     },
   ) {}
 
   public get(): ModelSettingsView {
-    const { config, database, modelSetup } = this.options;
+    const { config, credentials, database, modelSetup } = this.options;
     const providerId = modelSetup.providerId;
     const provider = modelSetup.modelRuntime.getProvider(providerId);
-    const storedKey = storedApiKey(database, providerId);
+    const storedKey = credentials.get(providerId);
     const environmentKey = providerId === "anthropic" ? config.anthropicApiKey : undefined;
     const apiKeySource =
-      storedKey !== undefined ? "settings" : environmentKey !== undefined ? "environment" : null;
+      storedKey !== undefined ? "credentials" : environmentKey !== undefined ? "environment" : null;
     return {
       apiKeyConfigured: apiKeySource !== null,
       apiKeySource,
@@ -218,13 +240,11 @@ export class ProviderSettingsService {
   }
 
   public listCustomProviders(): CustomProviderView[] {
-    const { database, modelSetup } = this.options;
+    const { credentials, database, modelSetup } = this.options;
     return database.listCustomProviders().map((record) => ({
       baseUrl: record.baseUrl,
       configured:
-        !record.requiresApiKey ||
-        modelSetup.mock ||
-        storedApiKey(database, record.id) !== undefined,
+        !record.requiresApiKey || modelSetup.mock || credentials.get(record.id) !== undefined,
       id: record.id,
       models: record.models,
       name: record.name,
@@ -234,9 +254,9 @@ export class ProviderSettingsService {
   }
 
   public async initializeCustomProviders(): Promise<void> {
-    const { database, modelSetup } = this.options;
+    const { credentials, database, modelSetup } = this.options;
     for (const record of database.listCustomProviders()) {
-      const apiKey = storedApiKey(database, record.id);
+      const apiKey = credentials.get(record.id);
       this.registerCustomProvider(record, apiKey);
       if (apiKey !== undefined) {
         await modelSetup.modelRuntime.setRuntimeApiKey(record.id, apiKey);
@@ -245,7 +265,7 @@ export class ProviderSettingsService {
   }
 
   public async saveCustomProvider(input: SaveCustomProviderInput): Promise<CustomProviderView> {
-    const { database, modelSetup } = this.options;
+    const { credentials, database, modelSetup } = this.options;
     const name = input.name.trim();
     if (name === "" || name.length > 120) {
       throw new ModelSettingsError("Provider 名称必须为 1-120 个字符");
@@ -285,19 +305,19 @@ export class ProviderSettingsService {
     this.registerCustomProvider(record, apiKey);
     if (apiKey !== undefined && apiKey !== "") {
       await modelSetup.modelRuntime.setRuntimeApiKey(id, apiKey);
-      database.setSetting(`${API_KEY_PREFIX}${id}`, apiKey);
+      await credentials.set(id, apiKey);
     }
     database.createCustomProvider(record);
     return this.listCustomProviders().find((item) => item.id === id) as CustomProviderView;
   }
 
-  public removeCustomProvider(id: string): void {
-    const { database, modelSetup } = this.options;
+  public async removeCustomProvider(id: string): Promise<void> {
+    const { credentials, database, modelSetup } = this.options;
     if (database.getCustomProvider(id) === null) {
       throw new ModelSettingsError("自定义 Provider 不存在");
     }
     modelSetup.modelRuntime.unregisterProvider(id);
-    database.deleteSetting(`${API_KEY_PREFIX}${id}`);
+    await credentials.delete(id);
     database.deleteCustomProvider(id);
   }
 
@@ -346,7 +366,7 @@ export class ProviderSettingsService {
   }
 
   public catalog(): ModelCatalogView {
-    const { config, database, modelSetup } = this.options;
+    const { config, credentials, database, modelSetup } = this.options;
     const providers = modelSetup.modelRuntime
       .getProviders()
       .filter(
@@ -357,7 +377,7 @@ export class ProviderSettingsService {
       .map((provider) => ({
         configured:
           modelSetup.mock ||
-          storedApiKey(database, provider.id) !== undefined ||
+          credentials.get(provider.id) !== undefined ||
           (provider.id === "anthropic" && config.anthropicApiKey !== undefined) ||
           database.getCustomProvider(provider.id)?.requiresApiKey === false,
         id: provider.id,
@@ -391,7 +411,7 @@ export class ProviderSettingsService {
     modelId: string,
     thinkingLevel: string,
   ): Promise<void> {
-    const { config, database, modelSetup } = this.options;
+    const { config, credentials, database, modelSetup } = this.options;
     const model = modelSetup.modelRuntime.getModel(providerId, modelId);
     if (model === undefined) throw new ModelSettingsError(`未知模型 "${providerId}/${modelId}"`);
     if (!THINKING_LEVELS.includes(thinkingLevel)) {
@@ -399,7 +419,7 @@ export class ProviderSettingsService {
     }
     if (!modelSetup.mock) {
       let configured =
-        storedApiKey(database, providerId) !== undefined ||
+        credentials.get(providerId) !== undefined ||
         (providerId === "anthropic" && config.anthropicApiKey !== undefined) ||
         database.getCustomProvider(providerId)?.requiresApiKey === false;
       if (
@@ -414,11 +434,11 @@ export class ProviderSettingsService {
   }
 
   public async hydrateCredentials(): Promise<void> {
-    const { config, database, modelSetup } = this.options;
+    const { config, credentials, modelSetup } = this.options;
     if (modelSetup.mock) return;
     for (const provider of modelSetup.modelRuntime.getProviders()) {
       const apiKey =
-        storedApiKey(database, provider.id) ??
+        credentials.get(provider.id) ??
         (provider.id === "anthropic" ? config.anthropicApiKey : undefined);
       if (apiKey !== undefined) {
         await modelSetup.modelRuntime.setRuntimeApiKey(provider.id, apiKey);
@@ -428,8 +448,8 @@ export class ProviderSettingsService {
 
   /** 自定义 Provider 注册完成后，重新应用持久化的默认选择。 */
   public async restoreStoredSelection(): Promise<void> {
-    const { config, database, modelSetup } = this.options;
-    const stored = readStoredModelSelection(database, config);
+    const { config, credentials, database, modelSetup } = this.options;
+    const stored = readStoredModelSelection(database, config, credentials);
     const model = modelSetup.modelRuntime.getModel(stored.providerId, stored.modelId);
     if (model === undefined) return;
     await modelSetup.modelRuntime.setRuntimeApiKey(
@@ -449,14 +469,14 @@ export class ProviderSettingsService {
     modelId: string;
     providerId: string;
   }): Promise<{ latencyMs: number; model: string }> {
-    const { config, database, modelSetup } = this.options;
+    const { config, credentials, modelSetup } = this.options;
     const model = modelSetup.modelRuntime.getModel(input.providerId, input.modelId);
     if (model === undefined) {
       throw new ModelSettingsError(`未知模型 "${input.providerId}/${input.modelId}"`);
     }
     const apiKey =
       input.apiKey?.trim() ||
-      storedApiKey(database, input.providerId) ||
+      credentials.get(input.providerId) ||
       (input.providerId === "anthropic" ? config.anthropicApiKey : undefined);
     if (modelSetup.mock && apiKey === undefined) {
       throw new ModelSettingsError("尚未接入真实模型，无法执行连接测试");
@@ -488,7 +508,7 @@ export class ProviderSettingsService {
   }
 
   public async save(input: SaveModelSettingsInput): Promise<ModelSettingsView> {
-    const { config, database, modelSetup } = this.options;
+    const { config, credentials, database, modelSetup } = this.options;
     const providerId = input.providerId.trim();
     const modelId = input.modelId.trim();
     if (providerId === "" || providerId.length > 64) {
@@ -512,7 +532,7 @@ export class ProviderSettingsService {
           ? config.anthropicApiKey
           : undefined
         : ((typedKey === undefined || typedKey === "" ? undefined : typedKey) ??
-          storedApiKey(database, providerId) ??
+          credentials.get(providerId) ??
           (providerId === "anthropic" ? config.anthropicApiKey : undefined));
     if (!input.mock && apiKey === undefined) {
       throw new ModelSettingsError("接入真实模型前需要填写 API Key");
@@ -533,9 +553,9 @@ export class ProviderSettingsService {
     );
 
     if (input.clearApiKey === true) {
-      database.deleteSetting(`${API_KEY_PREFIX}${providerId}`);
+      await credentials.delete(providerId);
     } else if (typedKey !== undefined && typedKey !== "") {
-      database.setSetting(`${API_KEY_PREFIX}${providerId}`, typedKey);
+      await credentials.set(providerId, typedKey);
     }
     database.setSetting(PROVIDER_KEY, providerId);
     database.setSetting(MODEL_KEY, modelId);

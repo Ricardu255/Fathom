@@ -14,8 +14,10 @@ import { SessionEventBus } from "./services/event-bus";
 import { GitService } from "./services/git-service";
 import { LiteratureService } from "./services/literature-service";
 import { PiSessionService } from "./services/pi-session-service";
+import { ProviderCredentialStore } from "./services/provider-credential-store";
 import { ProviderOAuthService } from "./services/provider-oauth-service";
 import {
+  migrateLegacyCredentials,
   ProviderSettingsService,
   readStoredModelSelection,
 } from "./services/provider-settings-service";
@@ -91,7 +93,15 @@ let piSetup: PiModelSetup | null = null;
 let providerSettings: ProviderSettingsService | undefined;
 let providerOAuth: ProviderOAuthService | undefined;
 if (config.engine === "pi") {
-  const storedModel = readStoredModelSelection(database, config);
+  // 凭据先于模型选择加载：迁移必须发生在 readStoredModelSelection 之前，
+  // 否则升级后的第一次启动会因为 SQLite 里已经删掉 Key 而静默回退 Mock。
+  const credentials = new ProviderCredentialStore(join(config.dataDir, "credentials.json"), logger);
+  await credentials.load();
+  const migratedKeys = await migrateLegacyCredentials(database, credentials);
+  if (migratedKeys > 0) {
+    logger.warn({ count: migratedKeys }, "已把明文 API Key 从数据库迁移到凭据文件");
+  }
+  const storedModel = readStoredModelSelection(database, config, credentials);
   try {
     piSetup = await createPiModelSetup(config, {
       ...(storedModel.apiKey === undefined ? {} : { apiKey: storedModel.apiKey }),
@@ -107,7 +117,12 @@ if (config.engine === "pi") {
       provider: "anthropic",
     });
   }
-  providerSettings = new ProviderSettingsService({ config, database, modelSetup: piSetup });
+  providerSettings = new ProviderSettingsService({
+    config,
+    credentials,
+    database,
+    modelSetup: piSetup,
+  });
   await providerSettings.initializeCustomProviders();
   await providerSettings.restoreStoredSelection();
   await providerSettings.hydrateCredentials();

@@ -1493,6 +1493,14 @@ export class HarnessDatabase {
     this.database.prepare("DELETE FROM settings WHERE key = ?").run(key);
   }
 
+  /** 按前缀枚举设置项，用于一次性迁移（例如旧版的明文 API Key）。 */
+  public listSettingsByPrefix(prefix: string): Array<{ key: string; value: string }> {
+    const rows = this.database
+      .prepare("SELECT key, value FROM settings WHERE key LIKE ? ESCAPE '\\'")
+      .all(`${prefix.replace(/[\\%_]/gu, (character) => `\\${character}`)}%`);
+    return rows.map((row) => ({ key: readString(row, "key"), value: readString(row, "value") }));
+  }
+
   private backfillWorkspaces(): void {
     const rows = this.database
       .prepare("SELECT DISTINCT workspace_root AS root FROM sessions")

@@ -330,7 +330,7 @@ function ModelSettingsForm(props: {
           {selectedProvider} · {selectedModel}
         </span>
         <span className="model-status-meta">
-          {settings.apiKeySource === "settings"
+          {settings.apiKeySource === "credentials"
             ? "已保存 API Key"
             : settings.apiKeySource === "environment"
               ? "使用环境变量 API Key"
@@ -445,7 +445,7 @@ function ModelSettingsForm(props: {
         >
           {testing ? "测试中…" : "测试连接"}
         </button>
-        {settings.apiKeySource === "settings" ? (
+        {settings.apiKeySource === "credentials" ? (
           <button
             className="btn btn-ghost"
             disabled={props.isSaving}

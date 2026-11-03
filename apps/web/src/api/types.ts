@@ -415,7 +415,7 @@ export interface SandboxSettings {
 
 export interface HarnessSettings {
   apiKeyConfigured: boolean;
-  apiKeySource: "environment" | "settings" | null;
+  apiKeySource: "credentials" | "environment" | null;
   approvalMode: "auto_approve" | "full_access" | "request_approval";
   model: string;
   models: ModelChoice[];

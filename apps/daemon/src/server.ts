@@ -590,7 +590,7 @@ export async function createServer(dependencies: ServerDependencies): Promise<Fa
       if (providerSettings === undefined) {
         throw new ModelSettingsError("当前执行引擎不支持运行时模型配置");
       }
-      providerSettings.removeCustomProvider(request.params.providerId);
+      await providerSettings.removeCustomProvider(request.params.providerId);
       return reply.status(204).send();
     },
   );
