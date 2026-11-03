@@ -2,7 +2,11 @@ import { type HarnessEvent, isTransientEventType } from "@harness/core";
 
 export type SessionEventSubscriber = (event: HarnessEvent) => void;
 
-const MAX_REPLAY_EVENTS = 512;
+/**
+ * transient 事件不进 JSONL，只能从这层缓冲重放；缓冲太小的话，客户端断线期间
+ * 的流式增量会丢失并表现为消息“跳字”。按一条长回答几百个 delta 估算，2048 足够宽。
+ */
+const MAX_REPLAY_EVENTS = 2048;
 
 /** 进程内实时广播：持久化事件从 JSONL 重放，这里只缓存 transient 事件。 */
 export class SessionEventBus {

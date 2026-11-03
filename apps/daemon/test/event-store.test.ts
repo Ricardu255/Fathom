@@ -97,6 +97,23 @@ test("corrupt middle lines are skipped without blocking later events", async () 
     events.map((event) => event.seq),
     [1, 3],
   );
+
+  // 损坏行不能只打一条 warning 就消失：原始行要留在旁边的隔离文件里。
+  const quarantined = await readFile(join(directory, "session-4.corrupt.jsonl"), "utf8");
+  const records = quarantined
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line) as { index: number; line: string });
+  assert.equal(records.length, 1);
+  assert.equal(records[0]?.line, "{not-json");
+  assert.equal(records[0]?.index, 1);
+});
+
+test("重复读取不会重复隔离同一行", async () => {
+  await store.read("session-4");
+  await store.read("session-4");
+  const quarantined = await readFile(join(directory, "session-4.corrupt.jsonl"), "utf8");
+  assert.equal(quarantined.trim().split("\n").length, 1);
 });
 
 test("non-increasing sequences are ignored", async () => {

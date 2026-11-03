@@ -15,6 +15,8 @@ export interface SessionEventStoreOptions {
  */
 export class SessionEventStore {
   private readonly tails = new Map<string, Promise<void>>();
+  /** 同一个损坏行只隔离一次，否则每次读都会重复追加。 */
+  private readonly quarantined = new Set<string>();
 
   public constructor(private readonly options: SessionEventStoreOptions) {}
 
@@ -52,6 +54,7 @@ export class SessionEventStore {
     if (hasTrailingNewline) lines.pop();
 
     const events: HarnessEvent[] = [];
+    const corrupt: Array<{ index: number; line: string }> = [];
     let previousSeq = 0;
     for (const [index, line] of lines.entries()) {
       if (line.trim() === "") {
@@ -64,6 +67,7 @@ export class SessionEventStore {
       } catch {
         const isLastLine = index === lines.length - 1 && !hasTrailingNewline;
         if (!isLastLine) {
+          corrupt.push({ index, line });
           this.options.onWarning?.("忽略无法解析的 JSONL 行", { index, sessionId });
         }
         continue;
@@ -83,6 +87,7 @@ export class SessionEventStore {
       previousSeq = event.seq;
       if (event.seq > afterSeq) events.push(event);
     }
+    if (corrupt.length > 0) await this.quarantine(sessionId, corrupt);
     return events;
   }
 
@@ -129,6 +134,39 @@ export class SessionEventStore {
 
   private pathFor(sessionId: string): string {
     return join(this.options.directory, `${sessionId}.jsonl`);
+  }
+
+  /**
+   * 损坏行不能只打一条 warning 就丢掉：事件流是事实源，丢了就再也拿不回来。
+   * 这里把原始行追加到旁边的 .corrupt.jsonl，事后还能人工核对。
+   */
+  private async quarantine(
+    sessionId: string,
+    entries: ReadonlyArray<{ index: number; line: string }>,
+  ): Promise<void> {
+    const pending = entries.filter(({ line }) => !this.quarantined.has(`${sessionId}\n${line}`));
+    if (pending.length === 0) return;
+    const path = `${this.pathFor(sessionId).slice(0, -".jsonl".length)}.corrupt.jsonl`;
+    const payload = `${pending
+      .map(({ index, line }) => JSON.stringify({ index, line, quarantinedAt: Date.now() }))
+      .join("\n")}\n`;
+    try {
+      const handle = await open(path, "a", 0o600);
+      try {
+        await handle.writeFile(payload, "utf8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    } catch (error: unknown) {
+      this.options.onWarning?.("隔离损坏行失败", {
+        error: error instanceof Error ? error.message : String(error),
+        path,
+        sessionId,
+      });
+      return;
+    }
+    for (const { line } of pending) this.quarantined.add(`${sessionId}\n${line}`);
   }
 
   private async enqueue(sessionId: string, operation: () => Promise<void>): Promise<void> {

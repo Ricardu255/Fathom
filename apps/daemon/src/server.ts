@@ -30,6 +30,7 @@ import {
 import { type BoardTaskService, BoardTaskServiceError } from "./services/board-task-service";
 import { DESKTOP_TOKEN_HEADER, matchesDesktopToken } from "./services/desktop-token";
 import type { SessionEventBus } from "./services/event-bus";
+import { resolveEventCursor } from "./services/event-cursor";
 import { FileChangeService, FileChangeServiceError } from "./services/file-change-service";
 import { type GitService, GitServiceError } from "./services/git-service";
 import { type LiteratureService, LiteratureServiceError } from "./services/literature-service";
@@ -963,7 +964,14 @@ export async function createServer(dependencies: ServerDependencies): Promise<Fa
     async (request, reply) => {
       const sessionId = request.params.sessionId;
       sessions.getSession(sessionId);
-      const afterSeq = parseAfterSeq(request.query.afterSeq);
+      // 浏览器重连会自动带上 Last-Event-ID；查询参数优先，便于客户端显式指定。
+      const afterSeq = resolveEventCursor({
+        afterSeq: request.query.afterSeq,
+        lastEventId: headerString(request.headers["last-event-id"]),
+      });
+      if (afterSeq < 0) {
+        throw new SessionServiceError("INVALID", "afterSeq 必须是非负整数");
+      }
       return streamSessionEvents({ bus, request, reply, sessionId, sessions, afterSeq });
     },
   );
@@ -1185,13 +1193,8 @@ async function streamSessionEvents(input: StreamInput): Promise<void> {
   }
 }
 
-function parseAfterSeq(value: string | undefined): number {
-  if (value === undefined) return 0;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new SessionServiceError("INVALID", "afterSeq 必须是非负整数");
-  }
-  return parsed;
+function headerString(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function toLiteratureSummary(record: LiteratureRecord) {
