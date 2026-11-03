@@ -127,3 +127,37 @@ test("non-increasing sequences are ignored", async () => {
     [2],
   );
 });
+
+test("新事件文件写入 schema 版本头，读取时把它当元数据而不是事件", async () => {
+  await store.append(makeEvent(1, "session-6"));
+  await store.append(makeEvent(2, "session-6"));
+
+  const events = await store.read("session-6");
+  assert.deepEqual(
+    events.map((event) => event.seq),
+    [1, 2],
+  );
+
+  const raw = await readFile(join(directory, "session-6.jsonl"), "utf8");
+  const header = JSON.parse(raw.split("\n")[0] ?? "") as { type: string; schemaVersion: number };
+  assert.equal(header.type, "session.header");
+  assert.equal(header.schemaVersion, 1);
+
+  // 头部不能被当成损坏行隔离。
+  await assert.rejects(
+    () => readFile(join(directory, "session-6.corrupt.jsonl"), "utf8"),
+    /ENOENT/u,
+  );
+});
+
+test("没有文件头的旧文件仍可回放", async () => {
+  await writeFile(
+    join(directory, "session-7.jsonl"),
+    `${JSON.stringify(makeEvent(1, "session-7"))}\n${JSON.stringify(makeEvent(2, "session-7"))}\n`,
+  );
+  const events = await store.read("session-7");
+  assert.deepEqual(
+    events.map((event) => event.seq),
+    [1, 2],
+  );
+});

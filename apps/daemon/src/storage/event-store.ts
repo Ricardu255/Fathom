@@ -1,6 +1,11 @@
-import { mkdir, open, readFile, rm, truncate } from "node:fs/promises";
+import { mkdir, open, readFile, rm, stat, truncate } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessEvent } from "@harness/core";
+
+/** 事件文件的写法版本。改事件形状时 +1，并在 read 时按版本补齐。 */
+export const EVENT_SCHEMA_VERSION = 1;
+
+const HEADER_TYPE = "session.header";
 
 export interface SessionEventStoreOptions {
   directory: string;
@@ -17,6 +22,8 @@ export class SessionEventStore {
   private readonly tails = new Map<string, Promise<void>>();
   /** 同一个损坏行只隔离一次，否则每次读都会重复追加。 */
   private readonly quarantined = new Set<string>();
+  /** 已经确认写过文件头的 session，避免每次 append 都 stat。 */
+  private readonly prepared = new Set<string>();
 
   public constructor(private readonly options: SessionEventStoreOptions) {}
 
@@ -26,8 +33,17 @@ export class SessionEventStore {
 
   public async append(event: HarnessEvent): Promise<void> {
     await this.enqueue(event.sessionId, async () => {
-      const handle = await open(this.pathFor(event.sessionId), "a", 0o600);
+      const path = this.pathFor(event.sessionId);
+      const handle = await open(path, "a", 0o600);
       try {
+        if (!this.prepared.has(event.sessionId)) {
+          // 只有新建或空文件才补头；已有文件说明它自带版本（或本来就是旧格式）。
+          const info = await stat(path).catch(() => null);
+          if (info === null || info.size === 0) {
+            await handle.writeFile(`${JSON.stringify(headerFor(event.sessionId))}\n`, "utf8");
+          }
+          this.prepared.add(event.sessionId);
+        }
         await handle.writeFile(`${JSON.stringify(event)}\n`, "utf8");
         await handle.sync();
       } finally {
@@ -53,10 +69,22 @@ export class SessionEventStore {
     const lines = text.split("\n");
     if (hasTrailingNewline) lines.pop();
 
+    // 文件头是自描述版本，不是事件；旧文件没有头，按版本 1 处理。
+    const header = readHeader(lines[0]);
+    if (header !== null && header.schemaVersion > EVENT_SCHEMA_VERSION) {
+      this.options.onWarning?.("事件文件来自更新的 schema 版本，按当前规则解析", {
+        fileVersion: header.schemaVersion,
+        sessionId,
+        supported: EVENT_SCHEMA_VERSION,
+      });
+    }
+    const firstEventIndex = header === null ? 0 : 1;
+
     const events: HarnessEvent[] = [];
     const corrupt: Array<{ index: number; line: string }> = [];
     let previousSeq = 0;
     for (const [index, line] of lines.entries()) {
+      if (index < firstEventIndex) continue;
       if (line.trim() === "") {
         this.options.onWarning?.("忽略 JSONL 空行", { index, sessionId });
         continue;
@@ -129,7 +157,10 @@ export class SessionEventStore {
   }
 
   public async remove(sessionId: string): Promise<void> {
-    await rm(this.pathFor(sessionId), { force: true });
+    this.prepared.delete(sessionId);
+    const path = this.pathFor(sessionId);
+    await rm(path, { force: true });
+    await rm(corruptPathFor(path), { force: true });
   }
 
   private pathFor(sessionId: string): string {
@@ -146,7 +177,7 @@ export class SessionEventStore {
   ): Promise<void> {
     const pending = entries.filter(({ line }) => !this.quarantined.has(`${sessionId}\n${line}`));
     if (pending.length === 0) return;
-    const path = `${this.pathFor(sessionId).slice(0, -".jsonl".length)}.corrupt.jsonl`;
+    const path = corruptPathFor(this.pathFor(sessionId));
     const payload = `${pending
       .map(({ index, line }) => JSON.stringify({ index, line, quarantinedAt: Date.now() }))
       .join("\n")}\n`;
@@ -200,6 +231,50 @@ function parseHarnessEvent(value: unknown): HarnessEvent {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+interface SessionHeader {
+  schemaVersion: number;
+  sessionId: string;
+  type: string;
+  writtenAt: number;
+}
+
+function headerFor(sessionId: string): SessionHeader {
+  return {
+    schemaVersion: EVENT_SCHEMA_VERSION,
+    sessionId,
+    type: HEADER_TYPE,
+    writtenAt: Date.now(),
+  };
+}
+
+function corruptPathFor(path: string): string {
+  return path.endsWith(".jsonl")
+    ? `${path.slice(0, -".jsonl".length)}.corrupt.jsonl`
+    : `${path}.corrupt`;
+}
+
+/** 只认「第一行、是对象、type 等于 session.header、schemaVersion 是正整数」。 */
+function readHeader(line: string | undefined): SessionHeader | null {
+  if (line === undefined) return null;
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("{")) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!isPlainObject(parsed) || parsed.type !== HEADER_TYPE) return null;
+  const version = parsed.schemaVersion;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 1) return null;
+  return {
+    schemaVersion: version,
+    sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : "",
+    type: HEADER_TYPE,
+    writtenAt: typeof parsed.writtenAt === "number" ? parsed.writtenAt : 0,
+  };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
