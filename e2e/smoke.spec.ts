@@ -939,7 +939,7 @@ test("分支可以对比差异并合并为新的摘要分支", { timeout: 60_000
   await expect(page.getByText(/【分支合并摘要】/u)).toBeVisible();
 });
 
-test("工作区抽屉可以预览并保存文本文件", async ({ page, request }) => {
+test("侧栏面板可以预览并保存文本文件", async ({ page, request }) => {
   const headers = { origin: "http://127.0.0.1:4399", "x-harness-request": "1" };
   const fileName = `workspace-edit-${Date.now()}.md`;
   const relativePath = `.e2e-workspace/${fileName}`;
@@ -952,14 +952,15 @@ test("工作区抽屉可以预览并保存文本文件", async ({ page, request 
   const session = (await created.json()) as { id: string };
 
   await page.goto(`/s/${session.id}`);
-  await page.getByRole("button", { name: "打开工作区" }).click();
-  const drawer = page.getByRole("dialog", { name: "工作区文件" });
-  await drawer.getByRole("button", { name: new RegExp(fileName, "u") }).click();
-  const editor = drawer.getByLabel("文件内容");
+  await page.getByRole("button", { name: "打开侧栏面板" }).click();
+  const inspector = page.locator(".inspector");
+  await expect(inspector).toBeVisible();
+  await inspector.getByRole("button", { name: new RegExp(fileName, "u") }).click();
+  const editor = inspector.getByLabel("文件内容");
   await expect(editor).toHaveValue("# initial\n");
   await editor.fill("# edited from UI\n");
-  await drawer.getByRole("button", { name: "保存" }).click();
-  await expect(drawer.getByText(/已保存/u)).toBeVisible();
+  await inspector.getByRole("button", { name: "保存" }).click();
+  await expect(inspector.getByText(/已保存/u)).toBeVisible();
   const content = await readFile(join(process.cwd(), relativePath), "utf8");
   expect(content).toBe("# edited from UI\n");
 });
@@ -1143,7 +1144,7 @@ test("Skills 可发现、切换并在 Composer 中通过 $ 引用", async ({ pag
   }
 });
 
-test("会话可以切换对话、轨迹与文件视图", async ({ page, request }) => {
+test("会话可以切换对话、轨迹视图并打开侧栏面板", async ({ page, request }) => {
   const created = await request.post("/api/sessions", {
     data: { title: `E2E Views ${Date.now()}` },
     headers: { origin: "http://127.0.0.1:4399", "x-harness-request": "1" },
@@ -1153,10 +1154,16 @@ test("会话可以切换对话、轨迹与文件视图", async ({ page, request 
   await page.goto(`/s/${session.id}`);
   await page.getByRole("button", { name: "轨迹", exact: true }).click();
   await expect(page.locator(".trace-toolbar")).toBeVisible();
-  await page.getByRole("button", { name: "文件", exact: true }).click();
-  await expect(page.locator(".workspace-browser")).toBeVisible();
   await page.getByRole("button", { name: "对话", exact: true }).click();
   await expect(page.getByLabel("消息输入")).toBeVisible();
+
+  // 文件树不再是独立视图，改为右侧统一 Inspector 的第一个页签。
+  await page.getByRole("button", { name: "打开侧栏面板" }).click();
+  const inspector = page.locator(".inspector");
+  await expect(inspector).toBeVisible();
+  await expect(inspector.locator(".workspace-browser")).toBeVisible();
+  await page.getByRole("button", { name: "关闭侧栏" }).click();
+  await expect(page.locator(".inspector")).toHaveCount(0);
 });
 
 test("用量统计与执行轨迹页面可用", async ({ page, request }) => {
