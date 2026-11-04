@@ -44,9 +44,9 @@ import { ModelPicker, type ModelSelection } from "../../components/ModelPicker";
 import { QueueChips } from "../../components/QueueChips";
 import { RewriteDialog } from "../../components/RewriteDialog";
 import { SubAgentBoard } from "../../components/SubAgentBoard";
-import { TodoPanel } from "../../components/TodoPanel";
 import { ToolCard } from "../../components/ToolCard";
 import { UserInputCard } from "../../components/UserInputCard";
+import { WorkCapsule } from "../../components/WorkCapsule";
 import { WorkspaceBrowser } from "../../components/WorkspaceBrowser";
 import { WorkspaceDrawer } from "../../components/WorkspaceDrawer";
 import { useChatStore } from "../../stores/chat-store";
@@ -954,7 +954,7 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
 
       {view === "chat" ? (
         <div className="composer-wrap">
-          <TodoPanel todos={todos} />
+          <WorkCapsule plan={plan} todos={todos} />
           {Object.values(userInputs).map((input) => (
             <UserInputCard
               input={input}

@@ -1915,3 +1915,51 @@
 :root[data-theme][data-design="maison"] .app-shell .chat-jump-bottom:hover {
   background: var(--hover);
 }
+
+/* 工作状态胶囊：默认只占一行，展开才看明细，不把 Composer 挤下去。 */
+:root[data-theme][data-design="maison"] .app-shell .work-capsule {
+  margin-bottom: 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-sheet) 70%, transparent);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .work-capsule > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  list-style: none;
+  color: var(--muted-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .work-capsule-count {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .work-capsule-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .work-capsule-step {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .work-capsule-body {
+  padding: 0 10px 8px;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .work-capsule-empty {
+  margin: 0;
+  color: var(--muted-2);
+  font-size: 12px;
+}
