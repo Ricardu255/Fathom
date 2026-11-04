@@ -1963,3 +1963,25 @@
   color: var(--muted-2);
   font-size: 12px;
 }
+
+/* 行内代码里的本地路径：做成紧凑的胶囊，悬停能看到完整路径。 */
+:root[data-theme][data-design="maison"] .app-shell .local-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paper-sheet) 60%, transparent);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .local-path-clickable {
+  cursor: pointer;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .local-path-clickable:hover {
+  background: var(--hover);
+}
