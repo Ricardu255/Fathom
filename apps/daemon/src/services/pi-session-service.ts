@@ -27,6 +27,12 @@ import { projectEvents } from "./session-projections";
 import { planSessionRecovery } from "./session-recovery";
 import { buildResumePrompt } from "./session-resume";
 import { SessionServiceError } from "./session-service";
+import {
+  assistantText,
+  buildTitlePrompt,
+  fallbackSessionTitle,
+  sanitizeGeneratedTitle,
+} from "./session-title";
 import type {
   CheckpointComparison,
   QueuedInput,
@@ -168,6 +174,35 @@ export class PiSessionService implements SessionController {
     );
     if (updated === null) throw new SessionServiceError("NOT_FOUND", "Session 不存在");
     return updated;
+  }
+
+  /**
+   * 让模型给会话起名，失败就保留首条输入的回退标题。
+   * 覆盖前要确认标题还停在回退值上——期间用户可能已经手动改过名。
+   */
+  private async generateTitle(sessionId: string, prompt: string, fallback: string): Promise<void> {
+    const { database, modelSetup } = this.options;
+    try {
+      const result = await modelSetup.modelRuntime.completeSimple(
+        modelSetup.model,
+        {
+          messages: [
+            {
+              content: [{ text: buildTitlePrompt(prompt), type: "text" }],
+              role: "user",
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        { maxTokens: 48, signal: AbortSignal.timeout(15_000) },
+      );
+      const title = sanitizeGeneratedTitle(assistantText(result));
+      if (title === null) return;
+      if (database.getSession(sessionId)?.title !== fallback) return;
+      database.updateSessionTitle(sessionId, title);
+    } catch {
+      // 生成失败保留回退标题，不额外打扰用户。
+    }
   }
 
   public renameSession(sessionId: string, title: string): void {
@@ -489,8 +524,10 @@ export class PiSessionService implements SessionController {
 
     const engine = await this.getOrCreateEngine(session);
     if (session.title === DEFAULT_TITLE && prompt !== "") {
-      const title = prompt.replace(/\s+/gu, " ").slice(0, 40);
-      this.options.database.updateSessionTitle(sessionId, title);
+      const fallback = fallbackSessionTitle(prompt);
+      this.options.database.updateSessionTitle(sessionId, fallback);
+      // 不等待：标题晚几秒出现无所谓，但首轮响应不能被标题请求拖慢。
+      void this.generateTitle(sessionId, prompt, fallback);
     }
     const recalled =
       this.options.memory === undefined ? undefined : await this.options.memory.recall(prompt, 5);

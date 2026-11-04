@@ -35,6 +35,7 @@ import { buildMergeSummary, compareSessionEvents } from "./session-compare";
 import { copySessionEvents, findUserMessageSeq } from "./session-fork";
 import { projectEvents } from "./session-projections";
 import { buildResumePrompt } from "./session-resume";
+import { fallbackSessionTitle } from "./session-title";
 import type {
   CheckpointComparison,
   QueuedInput,
@@ -425,8 +426,8 @@ export class SessionService implements SessionController {
     }
 
     if (session.title === DEFAULT_TITLE) {
-      const title = prompt.replace(/\s+/gu, " ").slice(0, 40);
-      this.database.updateSessionTitle(sessionId, title);
+      // 内置引擎不做模型生成，但回退标题的规则和 pi 引擎保持一致。
+      this.database.updateSessionTitle(sessionId, fallbackSessionTitle(prompt));
     }
 
     let started: { done: Promise<void>; runId: string };
