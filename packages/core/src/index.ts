@@ -12,6 +12,7 @@ export * from "./sub-agent";
 export {
   type FileObservation,
   type Tool,
+  type ToolAnnotations,
   type ToolContext,
   ToolRegistry,
   type ToolResult,

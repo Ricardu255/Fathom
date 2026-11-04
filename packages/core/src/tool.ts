@@ -25,10 +25,29 @@ export interface ToolResult {
   /** 图片结果会作为 image content 发给支持视觉的模型。 */
   images?: readonly MessageImage[];
   isError?: boolean;
+  /**
+   * 给程序消费者看的结构化结果。模型仍然只看到 `content`，
+   * UI 与策略可以读这里而不必再解析文本。
+   */
+  structuredContent?: unknown;
   todos?: readonly TodoItem[];
 }
 
+/**
+ * 工具行为提示，语义与 MCP 的 tool annotations 一致。
+ * 它是声明而不是保证：策略侧据此决定并行度与审批提示，不能拿来当安全边界。
+ */
+export interface ToolAnnotations {
+  /** 破坏性：可能删除或覆盖既有内容。 */
+  destructive?: boolean;
+  /** 幂等：同样的参数重复调用，结果一致。 */
+  idempotent?: boolean;
+  /** 只读：不修改工作区。 */
+  readOnly?: boolean;
+}
+
 export interface Tool {
+  annotations?: ToolAnnotations;
   description: string;
   execute(input: unknown, context: ToolContext): Promise<ToolResult>;
   inputSchema: Record<string, unknown>;

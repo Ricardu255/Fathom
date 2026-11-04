@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import type { FileChange, Tool, ToolContext, ToolResult } from "@harness/core";
+import type { FileChange, Tool, ToolAnnotations, ToolContext, ToolResult } from "@harness/core";
 import { PathPolicyError, resolveWorkspacePath } from "@harness/policy";
 import { createPatch } from "diff";
 import { z } from "zod";
@@ -13,6 +13,7 @@ const MAX_SEARCH_BYTES = 512 * 1024;
 const IGNORED_DIRECTORIES = new Set([".git", ".harness", "coverage", "dist", "node_modules"]);
 
 interface ToolConfig<T extends z.ZodType> {
+  annotations?: ToolAnnotations;
   description: string;
   execute: (input: z.output<T>, context: ToolContext) => Promise<ToolResult>;
   inputSchema: T;
@@ -23,6 +24,7 @@ interface ToolConfig<T extends z.ZodType> {
 
 function defineTool<T extends z.ZodType>(config: ToolConfig<T>): Tool {
   return {
+    ...(config.annotations === undefined ? {} : { annotations: config.annotations }),
     description: config.description,
     execute: (input, context) =>
       config.execute(config.inputSchema.parse(input) as z.output<T>, context),
@@ -229,6 +231,7 @@ export const readFileTool = defineTool({
   },
   inputSchema: readFileSchema,
   name: "read_file",
+  annotations: { idempotent: true, readOnly: true },
   requiresApproval: false,
   summarize: (input) => `读取 ${input.path}`,
 });
@@ -256,6 +259,7 @@ ${clipDiff(change.diff, 12_000)}`,
   },
   inputSchema: writeFileSchema,
   name: "write_file",
+  annotations: { destructive: true },
   requiresApproval: true,
   summarize: (input) => `写入 ${input.path}（${Buffer.byteLength(input.content, "utf8")} 字节）`,
 });

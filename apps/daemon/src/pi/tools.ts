@@ -1,6 +1,6 @@
 import type { JsonValue } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import type { KnowledgeSearch, Tool, ToolResult } from "@harness/core";
+import type { KnowledgeSearch, Tool, ToolAnnotations, ToolResult } from "@harness/core";
 import { assessCommand, resolveWorkspacePath, suggestCommandPrefix } from "@harness/policy";
 import type { TSchema } from "typebox";
 import type { ToolExecutionGuard } from "./tool-guard";
@@ -67,130 +67,156 @@ const PARALLEL_SAFE_TOOLS = new Set([
   "web_search",
 ]);
 
-export function executionModeForTool(tool: Pick<Tool, "name">): "parallel" | "sequential" {
+export function executionModeForTool(
+  tool: Pick<Tool, "annotations" | "name">,
+): "parallel" | "sequential" {
+  // 声明为只读的工具可以并行；其余仍按白名单，避免新工具默认就并发。
+  if (tool.annotations?.readOnly === true) return "parallel";
   return PARALLEL_SAFE_TOOLS.has(tool.name) ? "parallel" : "sequential";
+}
+
+/** 我们的 annotation 命名沿用 MCP 习惯，pi 侧要求带 Hint 后缀。 */
+export function toPiAnnotations(
+  annotations: ToolAnnotations | undefined,
+): { destructiveHint?: boolean; idempotentHint?: boolean; readOnlyHint?: boolean } | undefined {
+  if (annotations === undefined) return undefined;
+  const mapped = {
+    ...(annotations.destructive === undefined ? {} : { destructiveHint: annotations.destructive }),
+    ...(annotations.idempotent === undefined ? {} : { idempotentHint: annotations.idempotent }),
+    ...(annotations.readOnly === undefined ? {} : { readOnlyHint: annotations.readOnly }),
+  };
+  return Object.keys(mapped).length === 0 ? undefined : mapped;
 }
 
 /** 把我们的 Tool 契约包装成 pi 的 ToolDefinition，并在执行前插入审批。 */
 export function toPiTools(tools: readonly Tool[], hooks: PiToolHooks): ToolDefinition[] {
-  return tools.map((tool) => ({
-    description: tool.description,
-    executionMode: executionModeForTool(tool),
-    // JSON Schema 与 TypeBox 的 TSchema 结构兼容；运行时由 pi 再做一次参数校验。
-    parameters: tool.inputSchema as unknown as TSchema,
-    label: tool.name,
-    name: tool.name,
-    async execute(
-      toolCallId: string,
-      params: unknown,
-      signal: AbortSignal | undefined,
-    ): Promise<AgentToolResult> {
-      let parsed: unknown;
-      try {
-        parsed = tool.parse(params);
-      } catch (error: unknown) {
-        return errorResult(`工具参数无效: ${errorMessage(error)}`);
-      }
-
-      const blockedReason = hooks.blockedToolReason?.(tool.name);
-      if (blockedReason !== undefined) return errorResult(blockedReason);
-
-      const sandboxReason = hooks.sandboxBlockedReason?.(tool.name, parsed);
-      let approvedByHost = false;
-      if (sandboxReason !== undefined) {
-        approvedByHost = await hooks.requestApproval(
-          {
-            ...describeApproval(tool.name, parsed),
-            input: params,
-            risk: "high",
-            summary: `沙箱拒绝：${sandboxReason}。是否允许本次以宿主权限重跑？`,
-            toolCallId,
-            toolName: tool.name,
-          },
-          signal,
-          { force: true },
-        );
-        if (!approvedByHost) return errorResult(sandboxReason);
-      }
-
-      const command =
-        typeof parsed === "object" &&
-        parsed !== null &&
-        typeof (parsed as Record<string, unknown>).command === "string"
-          ? ((parsed as Record<string, unknown>).command as string)
-          : null;
-      const prefixApproved =
-        command !== null &&
-        (tool.name === "run_command" || tool.name === "start_background_command") &&
-        hooks.isCommandAllowed?.(command) === true;
-      if (tool.requiresApproval && !prefixApproved && !approvedByHost) {
-        let summary = tool.name;
+  return tools.map((tool) => {
+    const annotations = toPiAnnotations(tool.annotations);
+    return {
+      ...(annotations === undefined ? {} : { annotations }),
+      description: tool.description,
+      executionMode: executionModeForTool(tool),
+      // JSON Schema 与 TypeBox 的 TSchema 结构兼容；运行时由 pi 再做一次参数校验。
+      parameters: tool.inputSchema as unknown as TSchema,
+      label: tool.name,
+      name: tool.name,
+      async execute(
+        toolCallId: string,
+        params: unknown,
+        signal: AbortSignal | undefined,
+      ): Promise<AgentToolResult> {
+        let parsed: unknown;
         try {
-          summary = tool.summarize(parsed);
-        } catch {
-          // 参数已经校验过，这里失败只影响展示。
+          parsed = tool.parse(params);
+        } catch (error: unknown) {
+          return errorResult(`工具参数无效: ${errorMessage(error)}`);
         }
-        const approved = await hooks.requestApproval(
-          {
-            ...describeApproval(tool.name, parsed),
-            input: params,
-            summary,
-            toolCallId,
-            toolName: tool.name,
-          },
-          signal,
-        );
-        if (!approved) return errorResult("用户拒绝了该工具调用。");
-      }
 
-      try {
-        const runTool = (toolSignal: AbortSignal) =>
-          tool.execute(parsed, {
-            ...(hooks.protectedPaths === undefined ? {} : { protectedPaths: hooks.protectedPaths }),
-            ...(hooks.searchKnowledge === undefined
-              ? {}
-              : { searchKnowledge: hooks.searchKnowledge }),
-            signal: toolSignal,
-            workspaceRoot: hooks.workspaceRoot,
-          });
-        const coordinator = hooks.writeCoordinator;
-        const writePath =
-          coordinator === undefined ? null : await resolveWritePath(tool.name, parsed, hooks);
-        const runWithWriteGuard = async (toolSignal: AbortSignal): Promise<ToolResult> => {
-          if (coordinator === undefined || writePath === null) {
-            const result = await runTool(toolSignal);
-            recordObservations(coordinator, result);
-            return result;
+        const blockedReason = hooks.blockedToolReason?.(tool.name);
+        if (blockedReason !== undefined) return errorResult(blockedReason);
+
+        const sandboxReason = hooks.sandboxBlockedReason?.(tool.name, parsed);
+        let approvedByHost = false;
+        if (sandboxReason !== undefined) {
+          approvedByHost = await hooks.requestApproval(
+            {
+              ...describeApproval(tool.name, parsed),
+              input: params,
+              risk: "high",
+              summary: `沙箱拒绝：${sandboxReason}。是否允许本次以宿主权限重跑？`,
+              toolCallId,
+              toolName: tool.name,
+            },
+            signal,
+            { force: true },
+          );
+          if (!approvedByHost) return errorResult(sandboxReason);
+        }
+
+        const command =
+          typeof parsed === "object" &&
+          parsed !== null &&
+          typeof (parsed as Record<string, unknown>).command === "string"
+            ? ((parsed as Record<string, unknown>).command as string)
+            : null;
+        const prefixApproved =
+          command !== null &&
+          (tool.name === "run_command" || tool.name === "start_background_command") &&
+          hooks.isCommandAllowed?.(command) === true;
+        if (tool.requiresApproval && !prefixApproved && !approvedByHost) {
+          let summary = tool.name;
+          try {
+            summary = tool.summarize(parsed);
+          } catch {
+            // 参数已经校验过，这里失败只影响展示。
           }
-          return coordinator.withLock(writePath, toolSignal, async () => {
-            await assertObservedUnchanged(coordinator, writePath);
-            const result = await runTool(toolSignal);
-            recordObservations(coordinator, result);
-            return result;
-          });
-        };
-        const result =
-          hooks.guard === undefined
-            ? await runWithWriteGuard(signal ?? NEVER_ABORTED)
-            : await hooks.guard.run(tool.name, parsed, signal, runWithWriteGuard);
-        await hooks.onResult({ result, toolCallId, toolName: tool.name });
-        return {
-          content: [
-            { text: result.content, type: "text" },
-            ...(result.images ?? []).map((image) => ({
-              data: image.data,
-              mimeType: image.mimeType,
-              type: "image" as const,
-            })),
-          ],
-          details: result as unknown as JsonValue,
-          ...(result.isError === true ? { isError: true } : {}),
-        };
-      } catch (error: unknown) {
-        return errorResult(`工具执行失败: ${errorMessage(error)}`);
-      }
-    },
-  }));
+          const approved = await hooks.requestApproval(
+            {
+              ...describeApproval(tool.name, parsed),
+              input: params,
+              summary,
+              toolCallId,
+              toolName: tool.name,
+            },
+            signal,
+          );
+          if (!approved) return errorResult("用户拒绝了该工具调用。");
+        }
+
+        try {
+          const runTool = (toolSignal: AbortSignal) =>
+            tool.execute(parsed, {
+              ...(hooks.protectedPaths === undefined
+                ? {}
+                : { protectedPaths: hooks.protectedPaths }),
+              ...(hooks.searchKnowledge === undefined
+                ? {}
+                : { searchKnowledge: hooks.searchKnowledge }),
+              signal: toolSignal,
+              workspaceRoot: hooks.workspaceRoot,
+            });
+          const coordinator = hooks.writeCoordinator;
+          const writePath =
+            coordinator === undefined ? null : await resolveWritePath(tool.name, parsed, hooks);
+          const runWithWriteGuard = async (toolSignal: AbortSignal): Promise<ToolResult> => {
+            if (coordinator === undefined || writePath === null) {
+              const result = await runTool(toolSignal);
+              recordObservations(coordinator, result);
+              return result;
+            }
+            return coordinator.withLock(writePath, toolSignal, async () => {
+              await assertObservedUnchanged(coordinator, writePath);
+              const result = await runTool(toolSignal);
+              recordObservations(coordinator, result);
+              return result;
+            });
+          };
+          const result =
+            hooks.guard === undefined
+              ? await runWithWriteGuard(signal ?? NEVER_ABORTED)
+              : await hooks.guard.run(tool.name, parsed, signal, runWithWriteGuard);
+          await hooks.onResult({ result, toolCallId, toolName: tool.name });
+          return {
+            content: [
+              { text: result.content, type: "text" },
+              ...(result.images ?? []).map((image) => ({
+                data: image.data,
+                mimeType: image.mimeType,
+                type: "image" as const,
+              })),
+            ],
+            details: result as unknown as JsonValue,
+            ...(result.isError === true ? { isError: true } : {}),
+            ...(result.structuredContent === undefined
+              ? {}
+              : { structuredContent: result.structuredContent as JsonValue }),
+          };
+        } catch (error: unknown) {
+          return errorResult(`工具执行失败: ${errorMessage(error)}`);
+        }
+      },
+    };
+  });
 }
 
 function recordObservations(
