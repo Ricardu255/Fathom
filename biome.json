@@ -14,7 +14,9 @@
       "!!.desktop-workspace",
       "!!apps/desktop/resources",
       "!!apps/desktop/release",
-      "!!.agents"
+      "!!.agents",
+      "!!demo",
+      "!!screenshots"
     ]
   },
   "formatter": {

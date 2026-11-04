@@ -16,7 +16,7 @@ export const AUTO_FOLLOW_UP_PROMPT = `Continue the autonomous task from the prev
 export function createAutoFollowUpExtension(shouldContinue: () => boolean): InlineExtension {
   return {
     factory: (pi) => {
-      pi.on("agent_before_settle", (event) => {
+      pi.on("agent_before_settle", (_event) => {
         // 事件里的 canContinue 描述的是追加 entries 之前的上下文；真正能否续轮
         // 由 pi 在提交 custom_message 之后重新计算，所以这里不能提前返回。
         if (!shouldContinue()) return undefined;

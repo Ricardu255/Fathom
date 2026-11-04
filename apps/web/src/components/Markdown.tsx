@@ -17,15 +17,28 @@ function LocalPathChip({ path }: { path: string }) {
   const reveal = window.fathom?.workspace?.reveal;
   // 相对路径没法直接交给系统打开，只有绝对路径才做成可点击。
   const clickable = reveal !== undefined && /^[A-Za-z]:[\\/]/u.test(path);
-  return (
-    <span
-      className={`local-path${clickable ? " local-path-clickable" : ""}`}
-      onClick={clickable ? () => void reveal(path) : undefined}
-      title={path}
-    >
+  const content = (
+    <>
       <FileCode size={12} />
       {path}
-    </span>
+    </>
+  );
+  if (!clickable) {
+    return (
+      <span className="local-path" title={path}>
+        {content}
+      </span>
+    );
+  }
+  return (
+    <button
+      className="local-path local-path-clickable"
+      onClick={() => void reveal(path)}
+      title={path}
+      type="button"
+    >
+      {content}
+    </button>
   );
 }
 
