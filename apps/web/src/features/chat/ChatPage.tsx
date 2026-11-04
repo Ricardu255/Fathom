@@ -39,6 +39,7 @@ import { Composer } from "../../components/Composer";
 import { ContextUsagePopover } from "../../components/ContextUsagePopover";
 import { FileChangePanel } from "../../components/FileChangePanel";
 import { GitDrawer } from "../../components/GitDrawer";
+import { Inspector } from "../../components/Inspector";
 import { Markdown } from "../../components/Markdown";
 import { ModelPicker, type ModelSelection } from "../../components/ModelPicker";
 import { QueueChips } from "../../components/QueueChips";
@@ -47,8 +48,6 @@ import { SubAgentBoard } from "../../components/SubAgentBoard";
 import { ToolCard } from "../../components/ToolCard";
 import { UserInputCard } from "../../components/UserInputCard";
 import { WorkCapsule } from "../../components/WorkCapsule";
-import { WorkspaceBrowser } from "../../components/WorkspaceBrowser";
-import { WorkspaceDrawer } from "../../components/WorkspaceDrawer";
 import { useChatStore } from "../../stores/chat-store";
 import { TraceView } from "../trace/TracePage";
 import { isNearBottom } from "./follow-bottom";
@@ -97,7 +96,7 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef(new Map<number, HTMLElement>());
   const [activeTurn, setActiveTurn] = useState(0);
-  const [view, setView] = useState<"chat" | "files" | "trace">("chat");
+  const [view, setView] = useState<"chat" | "trace">("chat");
   const [visibleLimit, setVisibleLimit] = useState(80);
   const [followingOutput, setFollowingOutput] = useState(true);
   const [unreadTurns, setUnreadTurns] = useState(0);
@@ -135,7 +134,7 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
   const [fileChangeNotice, setFileChangeNotice] = useState<string | null>(null);
   const [compareOpen, setCompareOpen] = useState(false);
   const [checkpointsOpen, setCheckpointsOpen] = useState(false);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [gitOpen, setGitOpen] = useState(false);
   const sessionsQuery = useQuery(sessionsQueryOptions());
@@ -475,14 +474,14 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
         <div className="chat-header-meta">
           <fieldset className="chat-view-toggle" aria-label="会话视图">
             <legend className="sr-only">会话视图</legend>
-            {(["chat", "trace", "files"] as const).map((item) => (
+            {(["chat", "trace"] as const).map((item) => (
               <button
                 className={view === item ? "active" : ""}
                 key={item}
                 onClick={() => setView(item)}
                 type="button"
               >
-                {item === "chat" ? "对话" : item === "trace" ? "轨迹" : "文件"}
+                {item === "chat" ? "对话" : "轨迹"}
               </button>
             ))}
           </fieldset>
@@ -494,10 +493,10 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
             usage={lastUsage}
           />
           <button
-            aria-label="打开工作区"
-            className="header-icon-button"
-            onClick={() => setWorkspaceOpen(true)}
-            title="工作区"
+            aria-label="打开侧栏面板"
+            className={`header-icon-button${inspectorOpen ? " active" : ""}`}
+            onClick={() => setInspectorOpen((value) => !value)}
+            title="侧栏面板"
             type="button"
           >
             <FolderTree size={14} />
@@ -903,13 +902,9 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
             </div>
           </div>
         </>
-      ) : view === "trace" ? (
+      ) : (
         <div className="chat-view">
           <TraceView sessionId={sessionId} />
-        </div>
-      ) : (
-        <div className="chat-view chat-files-view">
-          <WorkspaceBrowser sessionId={sessionId} workspaceRoot={snapshot.session.workspaceRoot} />
         </div>
       )}
 
@@ -919,9 +914,14 @@ export function ChatPage({ sessionId }: { sessionId: string }) {
         <BackgroundCommandDrawer onClose={() => setCommandsOpen(false)} sessionId={sessionId} />
       ) : null}
 
-      {workspaceOpen ? (
-        <WorkspaceDrawer
-          onClose={() => setWorkspaceOpen(false)}
+      {inspectorOpen ? (
+        <Inspector
+          agents={Object.values(subAgents)}
+          busy={fileChangeBusy}
+          changes={fileChanges}
+          onClose={() => setInspectorOpen(false)}
+          onReplay={() => void applyFileChanges("replay")}
+          onUndo={() => void applyFileChanges("undo")}
           sessionId={sessionId}
           workspaceRoot={snapshot.session.workspaceRoot}
         />

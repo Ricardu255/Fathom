@@ -1988,3 +1988,86 @@
 :root[data-theme][data-design="maison"] .app-shell .local-path-clickable:hover {
   background: var(--hover);
 }
+
+/* 统一 Inspector：作为浮层挂在会话页右侧，展开时才渲染，不影响对话区布局。 */
+:root[data-theme][data-design="maison"] .app-shell .chat-page {
+  position: relative;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--hairline);
+  background: var(--paper-sheet);
+  box-shadow: -10px 0 28px rgba(30, 39, 72, 0.1);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-resize:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-tabs button.active {
+  border-color: var(--hairline);
+  color: var(--text);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-tabs button:hover {
+  background: var(--hover);
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-close {
+  margin-left: auto;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+:root[data-theme][data-design="maison"] .app-shell .inspector-empty {
+  margin: 0;
+  padding: 12px 4px;
+  color: var(--muted-2);
+  font-size: 12px;
+}
