@@ -92,6 +92,21 @@ pnpm check
 - **覆盖失败路径**：取消、超时、重复调用、损坏 JSONL、空的模型输出。
 - **测试发现的缺陷先修复再加断言**，不把 bug 固化为契约。
 
+## 跑桌面 E2E 前先清掉 `ELECTRON_RUN_AS_NODE`
+
+如果终端本身是 Electron 应用（或从其中派生），会继承 `ELECTRON_RUN_AS_NODE=1`。这个变量让
+`electron.exe` 退化成纯 Node 跑主进程，`require("electron").app` 变成 `undefined`，表现为
+`pnpm test:desktop` 只报一句没有上下文的 `Process failed to launch!`。
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+pnpm test:desktop
+```
+
+判断方法：手工启动 `apps/desktop/node_modules/electron/dist/electron.exe apps/desktop --no-sandbox`，
+如果 stderr 出现 `Cannot read properties of undefined (reading 'requestSingleInstanceLock')`，
+就是这个问题，和代码无关。
+
 ## 尚未自动化的部分
 
 - Computer Use 原生 helper（需要 macOS 权限与签名环境）。
