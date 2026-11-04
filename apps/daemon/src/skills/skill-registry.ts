@@ -6,10 +6,16 @@ import { isPathWithin } from "@harness/policy";
 export type SkillScope = "global" | "project" | "system";
 
 export interface SkillSummary {
+  /** 规范里的 allowed-tools：声明式预授权清单，运行时仍要过审批。 */
+  allowedTools?: readonly string[];
+  /** 环境要求，例如需要某个 CLI 或系统权限。 */
+  compatibility?: string;
   description: string;
   directory: string;
   enabled: boolean;
   id: string;
+  /** 许可证名称或随附的许可证文件。 */
+  license?: string;
   name: string;
   scope: SkillScope;
   skillFile: string;
@@ -179,10 +185,15 @@ export class SkillRegistry {
           const content = await readSkillFile(skillFile);
           const id = content.name;
           found.push({
+            ...(content.allowedTools === undefined ? {} : { allowedTools: content.allowedTools }),
+            ...(content.compatibility === undefined
+              ? {}
+              : { compatibility: content.compatibility }),
             description: content.description,
             directory,
             enabled: !this.disabled.has(`${scope}:${id}`),
             id,
+            ...(content.license === undefined ? {} : { license: content.license }),
             name: content.name,
             scope,
             skillFile,
@@ -196,9 +207,16 @@ export class SkillRegistry {
   }
 }
 
-export async function readSkillFile(
-  skillFile: string,
-): Promise<{ body: string; description: string; name: string }> {
+export interface SkillFrontmatter {
+  allowedTools?: readonly string[];
+  body: string;
+  compatibility?: string;
+  description: string;
+  license?: string;
+  name: string;
+}
+
+export async function readSkillFile(skillFile: string): Promise<SkillFrontmatter> {
   const info = await stat(skillFile);
   if (!info.isFile()) throw new SkillError("INVALID", "SKILL.md 不是文件");
   if (info.size > MAX_SKILL_FILE_BYTES) throw new SkillError("TOO_LARGE", "SKILL.md 超过 256KB");
@@ -208,9 +226,7 @@ export async function readSkillFile(
   return parsed;
 }
 
-export function parseSkillMarkdown(
-  content: string,
-): { body: string; description: string; name: string } | null {
+export function parseSkillMarkdown(content: string): SkillFrontmatter | null {
   const lines = content.replace(/\r\n/gu, "\n").split("\n");
   if (lines[0]?.trim() !== "---") return null;
   const end = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
@@ -225,7 +241,33 @@ export function parseSkillMarkdown(
     .join("\n")
     .trim();
   if (body === "" || body.length > MAX_SKILL_BODY_CHARS) return null;
-  return { body, description, name };
+  const compatibility = nonEmpty(meta.get("compatibility"));
+  const license = nonEmpty(meta.get("license"));
+  const allowedTools = parseAllowedTools(meta.get("allowed-tools"));
+  return {
+    ...(allowedTools === undefined ? {} : { allowedTools }),
+    body,
+    ...(compatibility === undefined ? {} : { compatibility }),
+    description,
+    ...(license === undefined ? {} : { license }),
+    name,
+  };
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed === "" ? undefined : trimmed;
+}
+
+/** `allowed-tools` 允许三种写法：YAML 列表、`[a, b]` 流式写法、逗号分隔。 */
+export function parseAllowedTools(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  const items = raw
+    .replace(/^\s*\[|\]\s*$/gu, "")
+    .split(",")
+    .map((item) => item.trim().replace(/^["']|["']$/gu, ""))
+    .filter((item) => item !== "");
+  return items.length === 0 ? undefined : items;
 }
 
 function parseFrontmatter(lines: readonly string[]): Map<string, string> {
@@ -238,6 +280,24 @@ function parseFrontmatter(lines: readonly string[]): Map<string, string> {
     const key = match[1];
     if (key === undefined) continue;
     const value = match[2] ?? "";
+    if (value === "") {
+      // YAML 列表：`allowed-tools:` 后面跟若干 `- 工具名` 行。
+      const items: string[] = [];
+      let lookahead = index + 1;
+      while (lookahead < lines.length) {
+        const next = lines[lookahead];
+        const bullet = next === undefined ? null : /^\s*-\s+(.*)$/u.exec(next);
+        if (bullet === null) break;
+        const item = bullet[1]?.trim();
+        if (item !== undefined && item !== "") items.push(item);
+        lookahead += 1;
+      }
+      if (items.length > 0) {
+        result.set(key, items.join(", "));
+        index = lookahead - 1;
+        continue;
+      }
+    }
     if (value === ">" || value === ">-" || value === "|" || value === "|-") {
       const block: string[] = [];
       for (index += 1; index < lines.length; index += 1) {
